@@ -1,0 +1,104 @@
+package com.u707t.tomatosprout.ui.settings
+
+import android.content.Context
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.u707t.tomatosprout.backup.BackupManager
+import com.u707t.tomatosprout.data.reset.DataResetManager
+import com.u707t.tomatosprout.domain.AppSettings
+import com.u707t.tomatosprout.domain.SettingsRepository
+import com.u707t.tomatosprout.domain.ThemeMode
+import com.u707t.tomatosprout.notify.ReminderScheduler
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import javax.inject.Inject
+
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val settingsRepo: SettingsRepository,
+    private val backup: BackupManager,
+    private val reset: DataResetManager,
+    private val scheduler: ReminderScheduler,
+) : ViewModel() {
+    val settings: StateFlow<AppSettings> =
+        settingsRepo.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
+
+    val messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
+    fun setTheme(mode: ThemeMode) = update { it.copy(themeMode = mode) }
+    fun setSimple(enabled: Boolean) = update { it.copy(simpleMode = enabled) }
+    fun setNotifications(enabled: Boolean) = update { it.copy(notificationsEnabled = enabled) }
+    fun setDnd(enabled: Boolean) = update { it.copy(dndEnabled = enabled) }
+    fun setDndStart(value: String) = update { it.copy(dndStart = value) }
+    fun setDndEnd(value: String) = update { it.copy(dndEnd = value) }
+    fun setFocusMinutes(value: Int) = update { it.copy(defaultFocusMinutes = value.coerceIn(5, 180)) }
+    fun setBreakMinutes(value: Int) = update { it.copy(defaultBreakMinutes = value.coerceIn(5, 30)) }
+    fun setStrict(enabled: Boolean) = update { it.copy(strictMode = enabled) }
+    fun setCountUp(enabled: Boolean) = update { it.copy(countUpMode = enabled) }
+    fun setMidnight(enabled: Boolean) = update { it.copy(midnightShift = enabled) }
+
+    private fun update(transform: (AppSettings) -> AppSettings) {
+        viewModelScope.launch { settingsRepo.update(transform) }
+    }
+
+    fun exportJson(uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val text = backup.exportJson()
+                withContext(Dispatchers.IO) { write(uri, text) }
+            }.onSuccess { messages.emit("已导出 JSON 备份") }
+                .onFailure { messages.emit("导出失败：${it.message}") }
+        }
+    }
+
+    fun exportCsv(uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val text = backup.exportCsv()
+                withContext(Dispatchers.IO) { write(uri, "\uFEFF$text") }
+            }.onSuccess { messages.emit("已导出 CSV（可用 Excel 打开）") }
+                .onFailure { messages.emit("导出失败：${it.message}") }
+        }
+    }
+
+    fun importJson(uri: Uri) {
+        viewModelScope.launch {
+            val text = runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        ?: error("无法读取文件")
+                }
+            }.getOrElse { messages.emit("读取失败：${it.message}"); return@launch }
+            val result = backup.importJson(text)
+            if (result.ok) runCatching { scheduler.rescheduleAll() }
+            messages.emit(
+                when {
+                    !result.ok -> "导入失败：${result.error}"
+                    else -> "导入完成：新增 ${result.imported} 条，冲突保留 ${result.conflicts} 条，跳过 ${result.skipped} 条"
+                },
+            )
+        }
+    }
+
+    fun clearAll() {
+        viewModelScope.launch {
+            reset.resetAll()
+            messages.emit("已清除本地记录（记录以软删除方式保留，不再显示）")
+        }
+    }
+
+    private fun write(uri: Uri, text: String) {
+        context.contentResolver.openOutputStream(uri, "w")?.use { stream ->
+            stream.write(text.toByteArray(Charsets.UTF_8))
+        } ?: error("无法写入所选位置")
+    }
+}
