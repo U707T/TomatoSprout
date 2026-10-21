@@ -1,5 +1,6 @@
 package com.u707t.tomatosprout.ui.stats
 
+import android.app.DatePickerDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,6 +52,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.domain.DayAggregate
 import com.u707t.tomatosprout.domain.HabitSchedule
+import com.u707t.tomatosprout.domain.HeatmapMetric
 import com.u707t.tomatosprout.domain.StatsData
 import com.u707t.tomatosprout.domain.StreakCalculator
 import com.u707t.tomatosprout.domain.TimelineItem
@@ -65,6 +68,7 @@ import com.u707t.tomatosprout.ui.components.dateFmt
 import com.u707t.tomatosprout.ui.theme.Tomato
 import java.time.LocalDate
 import java.time.YearMonth
+import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -73,6 +77,7 @@ import java.util.Locale
 fun StatsScreen(
     onAddHabit: () -> Unit,
     onOpenBadges: () -> Unit,
+    onOpenCalendar: (LocalDate, String?) -> Unit,
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.ui.collectAsStateWithLifecycle()
@@ -83,6 +88,9 @@ fun StatsScreen(
         topBar = {
             TopAppBar(
                 title = { Text("回顾") },
+                actions = {
+                    TextButton(onClick = { onOpenCalendar(LocalDate.now(), null) }) { Text("日历") }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -107,8 +115,11 @@ fun StatsScreen(
             }
             is StatsUiState.Content -> StatsContent(
                 data = s.data,
+                dashboard = s.dashboard,
                 padding = padding,
+                viewModel = viewModel,
                 onOpenBadges = onOpenBadges,
+                onOpenCalendar = onOpenCalendar,
                 onMakeup = viewModel::makeup,
             )
         }
@@ -118,17 +129,24 @@ fun StatsScreen(
 @Composable
 private fun StatsContent(
     data: StatsData,
+    dashboard: StatsDashboard,
     padding: androidx.compose.foundation.layout.PaddingValues,
+    viewModel: StatsViewModel,
     onOpenBadges: () -> Unit,
+    onOpenCalendar: (LocalDate, String?) -> Unit,
     onMakeup: (String, LocalDate) -> Unit,
 ) {
     var month by remember { mutableStateOf(YearMonth.now()) }
     var year by remember { mutableIntStateOf(LocalDate.now().year) }
     var yearView by remember { mutableStateOf(false) }
     var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
-    var filterTask by remember { mutableStateOf<String?>(null) }
+    var filterTask by remember { mutableStateOf(viewModel.initialTaskFilter) }
     var rangeDays by remember { mutableIntStateOf(30) }
     var taskMenu by remember { mutableStateOf(false) }
+    var heatmapMetric by remember { mutableStateOf(HeatmapMetric.CHECK_INS) }
+    var customStartPicker by remember { mutableStateOf(false) }
+    var customEndPicker by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val week = (6 downTo 0).map { offset ->
         val date = data.today.minusDays(offset.toLong())
@@ -156,6 +174,37 @@ private fun StatsContent(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 4.dp, 16.dp, 90.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item { CumulativeOverviewCard(data, dashboard) }
+        item {
+            DayOverviewCard(
+                dashboard = dashboard,
+                onPrevious = { viewModel.shiftDate(-1) },
+                onNext = { viewModel.shiftDate(1) },
+            )
+        }
+        item {
+            DistributionCard(
+                dashboard = dashboard,
+                onRange = viewModel::setRange,
+                onCustom = { customStartPicker = true },
+                onViewRecords = { onOpenCalendar(dashboard.selectedDate, filterTask) },
+            )
+        }
+        item {
+            SoftCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = viewModel::previousMonth) { Text("‹") }
+                    Text(
+                        "${dashboard.month.year} 年 ${dashboard.month.monthValue} 月",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                    TextButton(onClick = viewModel::nextMonth) { Text("›") }
+                }
+                MonthlyBarChart(dashboard = dashboard, onBarClick = viewModel::selectBar)
+            }
+        }
         item {
             SoftCard {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -205,6 +254,25 @@ private fun StatsContent(
                         label = { Text("年") },
                     )
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(
+                        selected = heatmapMetric == HeatmapMetric.CHECK_INS,
+                        onClick = { heatmapMetric = HeatmapMetric.CHECK_INS },
+                        label = { Text("打卡次数") },
+                    )
+                    FilterChip(
+                        selected = heatmapMetric == HeatmapMetric.FOCUS_DURATION,
+                        onClick = { heatmapMetric = HeatmapMetric.FOCUS_DURATION },
+                        label = { Text("专注时长") },
+                    )
+                }
+                val heatmapDays = data.days.mapValues { (_, day) ->
+                    if (heatmapMetric == HeatmapMetric.CHECK_INS) {
+                        DayAggregate(day.date, checkIns = day.checkIns)
+                    } else {
+                        DayAggregate(day.date, focusSeconds = day.focusSeconds)
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = {
                         if (yearView) year -= 1 else month = month.minusMonths(1)
@@ -220,16 +288,20 @@ private fun StatsContent(
                     }) { Text("下一页") }
                 }
                 if (yearView) {
-                    YearHeatmap(year = year, days = data.days)
+                    YearHeatmap(year = year, days = heatmapDays)
                 } else {
                     MonthHeatmap(
                         month = month,
-                        days = data.days,
+                        days = heatmapDays,
                         onDayClick = { selectedDate = it },
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "颜色越深，代表当天打卡次数与专注时长越多。点击某一天可查看详情或补卡。",
+                        if (heatmapMetric == HeatmapMetric.CHECK_INS) {
+                            "颜色越深，代表当天打卡次数越多。点击某一天可查看详情或补卡。"
+                        } else {
+                            "颜色越深，代表当天专注时长越长。点击某一天可查看详情或补卡。"
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -307,6 +379,33 @@ private fun StatsContent(
             items(filteredTimeline, key = { it.id }) { item ->
                 TimelineRow(item)
             }
+        }
+    }
+
+    androidx.compose.runtime.LaunchedEffect(customStartPicker) {
+        if (customStartPicker) {
+            customStartPicker = false
+            DatePickerDialog(
+                context,
+                { _, y, m, d ->
+                    val start = LocalDate.of(y, m + 1, d)
+                    viewModel.setCustomRange(start, dashboard.customEnd)
+                    customEndPicker = true
+                },
+                dashboard.customStart.year, dashboard.customStart.monthValue - 1, dashboard.customStart.dayOfMonth,
+            ).show()
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(customEndPicker) {
+        if (customEndPicker) {
+            customEndPicker = false
+            DatePickerDialog(
+                context,
+                { _, y, m, d ->
+                    viewModel.setCustomRange(dashboard.customStart, LocalDate.of(y, m + 1, d))
+                },
+                dashboard.customEnd.year, dashboard.customEnd.monthValue - 1, dashboard.customEnd.dayOfMonth,
+            ).show()
         }
     }
 

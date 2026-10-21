@@ -19,6 +19,8 @@ class FocusRepositoryImpl @Inject constructor(private val dao: FocusDao) : Focus
         dao.insertIgnore(session.toEntity())
     }
 
+    override suspend fun updateNote(id: String, note: String?) = dao.updateNote(id, note)
+
     override suspend fun softDelete(id: String, at: Long) = dao.softDelete(id, at)
 
     override suspend fun restoreAll(items: List<FocusSession>): MergeReport {

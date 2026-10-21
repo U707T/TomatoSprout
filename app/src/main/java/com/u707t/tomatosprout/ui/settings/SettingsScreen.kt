@@ -127,6 +127,12 @@ fun SettingsScreen(
                     Text("专注默认值", style = MaterialTheme.typography.titleMedium)
                     NumberRow("专注时长", settings.defaultFocusMinutes, 5, 180, viewModel::setFocusMinutes)
                     NumberRow("休息时长", settings.defaultBreakMinutes, 5, 30, viewModel::setBreakMinutes)
+                    SwitchRow(
+                        "忽略 30 秒内的正向计时",
+                        "结束时先询问，默认不记录",
+                        settings.ignoreShortFocus,
+                        viewModel::setIgnoreShortFocus,
+                    )
                     SwitchRow("默认严格模式", "本次专注不可暂停", settings.strictMode, viewModel::setStrict)
                     SwitchRow("默认正计时", "从 0 开始累计，手动结束", settings.countUpMode, viewModel::setCountUp)
                     SwitchRow("午夜归属", "凌晨 0–4 点开始的专注记到前一天", settings.midnightShift, viewModel::setMidnight)

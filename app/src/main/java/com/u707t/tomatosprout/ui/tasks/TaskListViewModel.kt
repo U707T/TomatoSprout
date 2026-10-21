@@ -25,7 +25,7 @@ sealed interface TaskListUiState {
 class TaskListViewModel @Inject constructor(private val useCase: TaskUseCase) : ViewModel() {
     val ui: StateFlow<TaskListUiState> = useCase.observeAll()
         .map { all ->
-            val visible = all.filter { it.deletedAt == null }
+            val visible = all.filter { it.deletedAt == null && it.parentId == null }
             val active = visible.filter { it.status != TaskStatus.ARCHIVED }
                 .sortedWith(compareBy({ it.status == TaskStatus.DONE }, { it.priority }, { it.createdAt }))
             val archived = visible.filter { it.status == TaskStatus.ARCHIVED }

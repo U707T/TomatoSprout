@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TaskDao {
-    @Query("SELECT * FROM tasks WHERE deletedAt IS NULL AND status != 'ARCHIVED' ORDER BY priority ASC, createdAt ASC")
+    @Query("SELECT * FROM tasks WHERE deletedAt IS NULL AND status != 'ARCHIVED' AND parentId IS NULL ORDER BY sortOrder ASC, priority ASC, createdAt ASC")
     fun observeActive(): Flow<List<TaskEntity>>
 
     @Query("SELECT * FROM tasks ORDER BY createdAt ASC, id ASC")
@@ -42,8 +42,44 @@ interface TaskDao {
     @Query("UPDATE tasks SET completedPomos = completedPomos + :delta, updatedAt = :at WHERE id = :id")
     suspend fun incrementCompletedPomos(id: String, delta: Int, at: Long)
 
+    @Query("UPDATE tasks SET sortOrder = :sortOrder, updatedAt = :at WHERE id = :id")
+    suspend fun updateSortOrder(id: String, sortOrder: Int, at: Long)
+
     @Query("UPDATE tasks SET deletedAt = :at, updatedAt = :at WHERE deletedAt IS NULL")
     suspend fun softDeleteAll(at: Long)
+}
+
+@Dao
+interface SubTaskDao {
+    @Query("SELECT * FROM subtasks WHERE parentTaskId = :parentId ORDER BY sortOrder ASC, createdAt ASC")
+    fun observeForParent(parentId: String): Flow<List<SubTaskEntity>>
+
+    @Query("SELECT * FROM subtasks WHERE parentTaskId = :parentId ORDER BY sortOrder ASC, createdAt ASC")
+    suspend fun forParent(parentId: String): List<SubTaskEntity>
+
+    @Query("SELECT * FROM subtasks ORDER BY parentTaskId ASC, sortOrder ASC, createdAt ASC")
+    fun observeAll(): Flow<List<SubTaskEntity>>
+
+    @Query("SELECT * FROM subtasks ORDER BY parentTaskId ASC, sortOrder ASC, createdAt ASC")
+    suspend fun all(): List<SubTaskEntity>
+
+    @Upsert
+    suspend fun upsert(entity: SubTaskEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllIgnore(entities: List<SubTaskEntity>): List<Long>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<SubTaskEntity>)
+
+    @Query("DELETE FROM subtasks WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("DELETE FROM subtasks WHERE parentTaskId = :parentId")
+    suspend fun deleteForParent(parentId: String)
+
+    @Query("DELETE FROM subtasks")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -152,6 +188,9 @@ interface FocusDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAllIgnore(entities: List<FocusSessionEntity>): List<Long>
+
+    @Query("UPDATE focus_sessions SET note = :note WHERE id = :id")
+    suspend fun updateNote(id: String, note: String?)
 
     @Query("UPDATE focus_sessions SET deletedAt = :at WHERE id = :id")
     suspend fun softDelete(id: String, at: Long)

@@ -80,7 +80,7 @@ fun AboutScreen(onBack: () -> Unit) {
                 Text(
                     "• 通知（可选）：习惯提醒与专注实时活动\n" +
                         "• 网络 / 网络状态：仅在你手动触发 WebDAV 同步时使用\n\n" +
-                        "不申请使用情况、无障碍、悬浮窗、通讯录、位置、相机、麦克风、健康数据等权限，也没有桌面小组件。",
+                        "不申请任何敏感权限，也没有桌面小组件；所有数据默认只保存在本机。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

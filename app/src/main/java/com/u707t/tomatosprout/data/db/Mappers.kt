@@ -7,6 +7,7 @@ import com.u707t.tomatosprout.domain.Frequency
 import com.u707t.tomatosprout.domain.GoalRule
 import com.u707t.tomatosprout.domain.HabitRule
 import com.u707t.tomatosprout.domain.ReminderRule
+import com.u707t.tomatosprout.domain.SubTask
 import com.u707t.tomatosprout.domain.Task
 import com.u707t.tomatosprout.domain.TaskStatus
 import com.u707t.tomatosprout.domain.TaskType
@@ -30,6 +31,9 @@ fun TaskEntity.toDomain() = Task(
     updatedAt = updatedAt,
     deletedAt = deletedAt,
     parentId = parentId,
+    sortOrder = sortOrder,
+    timerMode = timerMode ?: "countdown",
+    focusMinutes = focusMinutes ?: 25,
 )
 
 fun Task.toEntity() = TaskEntity(
@@ -49,7 +53,14 @@ fun Task.toEntity() = TaskEntity(
     updatedAt = updatedAt,
     deletedAt = deletedAt,
     parentId = parentId,
+    sortOrder = sortOrder,
+    timerMode = timerMode,
+    focusMinutes = focusMinutes,
 )
+
+fun SubTaskEntity.toDomain() = SubTask(id, parentTaskId, title, done, sortOrder, createdAt)
+
+fun SubTask.toEntity() = SubTaskEntity(id, parentTaskId, title, done, sortOrder, createdAt)
 
 fun HabitRuleEntity.toDomain() = HabitRule(
     taskId = taskId,
@@ -123,6 +134,7 @@ fun FocusSessionEntity.toDomain() = FocusSession(
     endedAt = endedAt,
     isMidnightShifted = isMidnightShifted,
     interruptionCount = interruptionCount,
+    note = note,
     deletedAt = deletedAt,
 )
 
@@ -136,6 +148,7 @@ fun FocusSession.toEntity() = FocusSessionEntity(
     endedAt = endedAt,
     isMidnightShifted = isMidnightShifted,
     interruptionCount = interruptionCount,
+    note = note,
     deletedAt = deletedAt,
 )
 

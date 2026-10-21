@@ -160,6 +160,32 @@ fun HabitEditScreen(
                 )
             }
 
+            SectionHeader("计时方式")
+            SoftCard {
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    listOf(
+                        "countdown" to "倒计时",
+                        "countup" to "正向计时",
+                        "none" to "不计时",
+                    ).forEach { (mode, label) ->
+                        FilterChip(
+                            selected = state.timerMode == mode,
+                            onClick = { viewModel.setTimerMode(mode) },
+                            label = { Text(label) },
+                            modifier = Modifier.padding(end = 6.dp),
+                        )
+                    }
+                }
+                if (state.timerMode == "countdown") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("单次时长", modifier = Modifier.weight(1f))
+                        IconButton(onClick = { viewModel.setFocusMinutes(state.focusMinutes - 5) }) { Text("−") }
+                        Text("${state.focusMinutes} 分钟")
+                        IconButton(onClick = { viewModel.setFocusMinutes(state.focusMinutes + 5) }) { Text("+") }
+                    }
+                }
+            }
+
             SectionHeader("外观")
             SoftCard {
                 Text("图标", style = MaterialTheme.typography.labelLarge)
@@ -319,12 +345,12 @@ fun HabitEditScreen(
                 }
             }
 
-            if (state.type == TaskType.HABIT) {
+            run {
                 SectionHeader("本地提醒")
                 SoftCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("提醒我打卡")
+                            Text("定时提醒")
                             Text(
                                 "不申请精确闹钟权限，系统可能延迟几分钟",
                                 style = MaterialTheme.typography.labelMedium,
@@ -364,11 +390,11 @@ fun HabitEditScreen(
                 }
             }
 
-            if (state.type == TaskType.TODO && state.taskId != null && state.subtasks.isEmpty()) {
+            if (state.type == TaskType.TODO && state.subtasks.isEmpty()) {
                 SectionHeader("子任务")
                 SoftCard {
                     Text(
-                        "把一个待办拆成更小的步骤，完成状态会自动汇总。",
+                        "把一个待办拆成更小的步骤，全部完成时父任务自动完成。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -380,7 +406,7 @@ fun HabitEditScreen(
                     state.subtasks.forEach { child ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
-                                checked = child.status == TaskStatus.DONE,
+                                checked = child.done,
                                 onCheckedChange = { viewModel.toggleSubtask(child) },
                             )
                             Text(child.title, modifier = Modifier.weight(1f))
@@ -391,7 +417,7 @@ fun HabitEditScreen(
                     }
                 }
             }
-            if (state.type == TaskType.TODO && state.taskId != null) {
+            if (state.type == TaskType.TODO) {
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -30,18 +31,21 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.toRoute
 import androidx.navigation.compose.rememberNavController
 import com.u707t.tomatosprout.domain.AppSettings
 import com.u707t.tomatosprout.domain.SettingsRepository
 import com.u707t.tomatosprout.ui.badges.BadgesScreen
+import com.u707t.tomatosprout.ui.calendar.CalendarTimelineScreen
 import com.u707t.tomatosprout.ui.edit.HabitEditScreen
-import com.u707t.tomatosprout.ui.focus.FocusScreen
+import com.u707t.tomatosprout.ui.focus.FocusTimerScreen
 import com.u707t.tomatosprout.ui.settings.AboutScreen
 import com.u707t.tomatosprout.ui.settings.SettingsScreen
 import com.u707t.tomatosprout.ui.settings.SyncLogsScreen
 import com.u707t.tomatosprout.ui.settings.WebDavScreen
 import com.u707t.tomatosprout.ui.stats.StatsScreen
 import com.u707t.tomatosprout.ui.tasks.TaskListScreen
+import com.u707t.tomatosprout.ui.tasks.TodoScreen
 import com.u707t.tomatosprout.ui.theme.Tomato
 import com.u707t.tomatosprout.ui.theme.TomatoTheme
 import com.u707t.tomatosprout.ui.today.TodayScreen
@@ -70,7 +74,7 @@ fun TomatoApp(
         val entry by nav.currentBackStackEntryAsState()
         val destination = entry?.destination
         val isTab = destination?.let {
-            it.hasRoute<TodayRoute>() || it.hasRoute<FocusRoute>() ||
+            it.hasRoute<TodayRoute>() || it.hasRoute<TasksRoute>() ||
                 it.hasRoute<StatsRoute>() || it.hasRoute<SettingsRoute>()
         } ?: true
 
@@ -84,7 +88,7 @@ fun TomatoApp(
 
         LaunchedEffect(initialNav) {
             if (initialNav == "focus") {
-                nav.navigate(FocusRoute) { launchSingleTop = true }
+                nav.navigate(FocusRoute()) { launchSingleTop = true }
                 onNavConsumed()
             }
         }
@@ -100,13 +104,60 @@ fun TomatoApp(
                         onAddHabit = { nav.navigate(EditRoute()) },
                         onEditTask = { id -> nav.navigate(EditRoute(id)) },
                         onOpenTasks = { nav.navigate(TasksRoute) },
+                        onOpenCalendar = { nav.navigate(CalendarRoute()) },
                     )
                 }
-                composable<FocusRoute> { FocusScreen() }
-                composable<StatsRoute> {
+                composable<FocusRoute> {
+                    FocusTimerScreen(onExit = { nav.navigate(TodayRoute) { popUpTo(TodayRoute) } })
+                }
+                composable<StatsRoute> { entry ->
+                    val route = entry.toRoute<StatsRoute>()
                     StatsScreen(
                         onAddHabit = { nav.navigate(EditRoute()) },
                         onOpenBadges = { nav.navigate(BadgesRoute) },
+                        onOpenCalendar = { date, taskId ->
+                            nav.navigate(CalendarRoute(taskId = taskId, date = date.toString()))
+                        },
+                    )
+                }
+                composable<CalendarRoute> {
+                    CalendarTimelineScreen(onBack = { nav.popBackStack() })
+                }
+                composable<TasksRoute> {
+                    TodoScreen(
+                        onStartTask = { task ->
+                            nav.navigate(
+                                FocusRoute(
+                                    taskId = task.id,
+                                    timerMode = task.timerMode,
+                                    minutes = task.focusMinutes,
+                                ),
+                            )
+                        },
+                        onEditTask = { id -> nav.navigate(EditRoute(id)) },
+                        onAdvancedAdd = { state ->
+                            nav.navigate(
+                                EditRoute(
+                                    prefillTitle = state.title,
+                                    prefillType = state.type.taskType.name,
+                                    prefillTimerMode = state.timer.storage,
+                                    prefillMinutes = state.durationMinutes,
+                                ),
+                            )
+                        },
+                        onOpenArchive = { nav.navigate(ArchiveRoute) },
+                        onOpenHistory = { taskId ->
+                            nav.navigate(CalendarRoute(taskId = taskId, date = java.time.LocalDate.now().toString()))
+                        },
+                        onOpenStats = { taskId ->
+                            nav.navigate(StatsRoute(taskId = taskId, date = java.time.LocalDate.now().toString()))
+                        },
+                    )
+                }
+                composable<ArchiveRoute> {
+                    TaskListScreen(
+                        onBack = { nav.popBackStack() },
+                        onEdit = { id -> nav.navigate(EditRoute(id)) },
                     )
                 }
                 composable<SettingsRoute> {
@@ -158,12 +209,17 @@ fun TomatoApp(
                         selected = destination?.hasRoute<TodayRoute>() == true,
                     ) { goTab(TodayRoute) }
                     NavItem(
+                        label = "任务",
+                        icon = Icons.Default.List,
+                        selected = destination?.hasRoute<TasksRoute>() == true,
+                    ) { goTab(TasksRoute) }
+                    NavItem(
                         label = "专注",
                         icon = Icons.Default.PlayArrow,
-                        selected = destination?.hasRoute<FocusRoute>() == true,
-                    ) { goTab(FocusRoute) }
+                        selected = false,
+                    ) { goTab(FocusRoute()) }
                     NavItem(
-                        label = "回顾",
+                        label = "统计",
                         icon = Icons.Default.DateRange,
                         selected = destination?.hasRoute<StatsRoute>() == true,
                     ) { goTab(StatsRoute) }

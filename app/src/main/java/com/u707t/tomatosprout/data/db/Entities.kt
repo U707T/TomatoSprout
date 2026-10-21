@@ -1,6 +1,8 @@
 package com.u707t.tomatosprout.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
@@ -31,6 +33,9 @@ data class TaskEntity(
     val updatedAt: Long = 0L,
     val deletedAt: Long? = null,
     val parentId: String? = null,
+    @ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
+    val timerMode: String? = null,
+    val focusMinutes: Int? = null,
 )
 
 @Serializable
@@ -92,6 +97,7 @@ data class FocusSessionEntity(
     val endedAt: Long,
     val isMidnightShifted: Boolean = false,
     val interruptionCount: Int = 0,
+    val note: String? = null,
     val deletedAt: Long? = null,
 )
 

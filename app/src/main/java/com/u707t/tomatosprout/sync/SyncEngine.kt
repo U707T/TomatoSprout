@@ -52,10 +52,11 @@ class SnapshotFactory @Inject constructor(
         val config = settings.current()
         val bundle = tasks.captureAll()
         return SyncSnapshot(
-            schemaVersion = 1,
+            schemaVersion = 2,
             deviceId = config.deviceId,
             exportedAt = clock.nowMillis(),
             tasks = bundle.tasks.map { it.toEntity() },
+            subTasks = bundle.subTasks.map { it.toEntity() },
             habitRules = bundle.habitRules.map { it.toEntity() },
             goalRules = bundle.goalRules.map { it.toEntity() },
             checkIns = checkIns.all().map { it.toEntity() },
@@ -77,6 +78,7 @@ fun AppSettings.toDto() = SettingsDto(
     dndEnd = dndEnd,
     defaultFocusMinutes = defaultFocusMinutes,
     defaultBreakMinutes = defaultBreakMinutes,
+    ignoreShortFocus = ignoreShortFocus,
     strictMode = strictMode,
     countUpMode = countUpMode,
     midnightShift = midnightShift,
@@ -135,7 +137,7 @@ class SyncEngine @Inject constructor(
                 val snapshot = runCatching {
                     json.decodeFromString<SyncSnapshot>(bytes.toString(Charsets.UTF_8))
                 }.getOrElse { throw IllegalStateException("远端文件 ${file.name} 格式不正确，已停止以避免数据丢失") }
-                if (snapshot.schemaVersion > 1) throw IllegalStateException("远端备份版本过新，请升级 App")
+                if (snapshot.schemaVersion > 2) throw IllegalStateException("远端备份版本过新，请升级 App")
                 // 语义哈希：忽略每次都会变化的 exportedAt，数据没变就不重复合并
                 val hash = semanticHash(snapshot)
                 val previous = manifests[file.name]
@@ -250,7 +252,12 @@ class SyncEngine @Inject constructor(
         // 规则跟随任务。本地有未同步修改的任务时不覆盖其规则，避免一次同步把本地编辑吞掉。
         val localAfter = tasks.captureAll().tasks.associateBy { it.id }
         val protectedIds = localAfter.values.filter { lastSync > 0 && it.updatedAt > lastSync }.map { it.id }.toSet()
-        remote.habitRules.filter { it.taskId in localAfter.keys && it.taskId !in protectedIds }
+        val validTaskIds = localAfter.keys
+        tasks.restoreAll(
+            TaskBundle(subTasks = remote.subTasks.filter { it.parentTaskId in validTaskIds }.map { it.toDomain() }),
+            overwrite = false,
+        )
+        remote.habitRules.filter { it.taskId in validTaskIds && it.taskId !in protectedIds }
             .forEach { tasks.upsertHabitRule(it.toDomain()) }
         remote.goalRules.filter { it.taskId in localAfter.keys && it.taskId !in protectedIds }
             .forEach { tasks.upsertGoalRule(it.toDomain()) }
@@ -277,6 +284,7 @@ class SyncEngine @Inject constructor(
                 dndEnd = dto.dndEnd,
                 defaultFocusMinutes = dto.defaultFocusMinutes.coerceIn(5, 180),
                 defaultBreakMinutes = dto.defaultBreakMinutes.coerceIn(5, 30),
+                ignoreShortFocus = dto.ignoreShortFocus,
                 strictMode = dto.strictMode,
                 countUpMode = dto.countUpMode,
                 midnightShift = dto.midnightShift,

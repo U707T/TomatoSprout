@@ -64,7 +64,7 @@ class BackupManager @Inject constructor(
             json.decodeFromString<SyncSnapshot>(text)
         }.getOrElse { return ImportResult(false, error = "文件不是有效的番茄芽备份：${it.message?.take(80)}") }
 
-        if (snapshot.schemaVersion > 1) return ImportResult(false, error = "备份版本较新，请升级 App 后再导入")
+        if (snapshot.schemaVersion > 2) return ImportResult(false, error = "备份版本较新，请升级 App 后再导入")
         val invalid = validate(snapshot)
         if (invalid != null) return ImportResult(false, error = invalid)
 
@@ -85,6 +85,9 @@ class BackupManager @Inject constructor(
                 local.toEntity() == remote -> skipped++
                 else -> conflicts++ // 保留本地，冲突只提示不覆盖
             }
+        }
+        snapshot.subTasks.filter { it.parentTaskId in newTaskIds }.forEach {
+            tasks.restoreAll(TaskBundle(subTasks = listOf(it.toDomain())), overwrite = false)
         }
         snapshot.habitRules.filter { it.taskId in newTaskIds }.forEach { tasks.upsertHabitRule(it.toDomain()) }
         snapshot.goalRules.filter { it.taskId in newTaskIds }.forEach { tasks.upsertGoalRule(it.toDomain()) }
@@ -109,6 +112,7 @@ class BackupManager @Inject constructor(
                     dndEnd = s.dndEnd,
                     defaultFocusMinutes = s.defaultFocusMinutes.coerceIn(5, 180),
                     defaultBreakMinutes = s.defaultBreakMinutes.coerceIn(5, 30),
+                    ignoreShortFocus = s.ignoreShortFocus,
                     strictMode = s.strictMode,
                     countUpMode = s.countUpMode,
                     midnightShift = s.midnightShift,
@@ -127,6 +131,9 @@ class BackupManager @Inject constructor(
             .onFailure { return "打卡记录的日期格式错误" }
         if (snapshot.checkIns.any { it.id.isBlank() || it.taskId.isBlank() }) return "打卡记录缺少 id"
         if (snapshot.focusSessions.any { it.actualSeconds < 0 || it.plannedSeconds < 0 }) return "专注时长不合法"
+        if (snapshot.subTasks.any { it.id.isBlank() || it.parentTaskId.isBlank() || it.title.isBlank() }) {
+            return "子任务缺少 id、父任务或标题"
+        }
         return null
     }
 

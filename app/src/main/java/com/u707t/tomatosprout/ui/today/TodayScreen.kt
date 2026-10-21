@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
@@ -71,6 +72,7 @@ fun TodayScreen(
     onAddHabit: () -> Unit,
     onEditTask: (String) -> Unit,
     onOpenTasks: () -> Unit,
+    onOpenCalendar: () -> Unit,
     viewModel: TodayViewModel = hiltViewModel(),
 ) {
     val state by viewModel.ui.collectAsStateWithLifecycle()
@@ -98,8 +100,11 @@ fun TodayScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenCalendar) {
+                        Icon(Icons.Default.DateRange, contentDescription = "日历")
+                    }
                     IconButton(onClick = onOpenTasks) {
-                        Icon(Icons.Default.List, contentDescription = "全部任务")
+                        Icon(Icons.Default.List, contentDescription = "任务卡片")
                     }
                     val simple = (state as? TodayUiState.Content)?.simpleMode == true
                     TextButton(onClick = { viewModel.setSimpleMode(!simple) }) {

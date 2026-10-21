@@ -19,7 +19,7 @@ import javax.inject.Singleton
 
 /**
  * 安卓「灵动岛」效果的唯一实现：高优先级通知 + 自定义 RemoteViews。
- * 不申请 SYSTEM_ALERT_WINDOW / POST_PROMOTED_NOTIFICATIONS，不使用覆盖窗口。
+ * 仅使用系统通知与自定义 RemoteViews，遵守权限最小化。
  * 通知权限被拒绝时整体静默关闭。
  */
 @Singleton

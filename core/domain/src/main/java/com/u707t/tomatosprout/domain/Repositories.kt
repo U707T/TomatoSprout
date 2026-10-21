@@ -6,7 +6,20 @@ data class TaskBundle(
     val tasks: List<Task> = emptyList(),
     val habitRules: List<HabitRule> = emptyList(),
     val goalRules: List<GoalRule> = emptyList(),
+    val subTasks: List<SubTask> = emptyList(),
 )
+
+interface SubTaskRepository {
+    fun observeAll(): Flow<List<SubTask>>
+    fun observeForParent(parentId: String): Flow<List<SubTask>>
+    suspend fun forParent(parentId: String): List<SubTask>
+    suspend fun all(): List<SubTask>
+    suspend fun upsert(subTask: SubTask)
+    suspend fun delete(id: String)
+    suspend fun deleteForParent(parentId: String)
+    suspend fun insertAllIgnore(items: List<SubTask>): MergeReport
+    suspend fun insertAll(items: List<SubTask>)
+}
 
 interface TaskRepository {
     fun observeActiveTasks(): Flow<List<Task>>
@@ -20,6 +33,7 @@ interface TaskRepository {
     suspend fun setStatus(id: String, status: TaskStatus, updatedAt: Long)
     suspend fun softDelete(id: String, updatedAt: Long)
     suspend fun incrementCompletedPomos(id: String, delta: Int, updatedAt: Long)
+    suspend fun updateSortOrder(id: String, sortOrder: Int, updatedAt: Long)
 
     suspend fun habitRule(taskId: String): HabitRule?
     suspend fun goalRule(taskId: String): GoalRule?
@@ -47,6 +61,7 @@ interface FocusRepository {
     fun observeAll(): Flow<List<FocusSession>>
     suspend fun all(): List<FocusSession>
     suspend fun insert(session: FocusSession)
+    suspend fun updateNote(id: String, note: String?)
     suspend fun softDelete(id: String, at: Long)
     suspend fun restoreAll(items: List<FocusSession>): MergeReport
 }

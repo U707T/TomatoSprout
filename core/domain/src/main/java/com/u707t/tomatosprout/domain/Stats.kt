@@ -21,6 +21,18 @@ data class DayAggregate(
     val pomos: Int = 0,
 )
 
+data class GoalProgress(
+    val used: Long,
+    val target: Long?,
+    val unit: String,
+) {
+    val ratio: Float? get() = target?.takeIf { it > 0 }?.let { (used.toFloat() / it).coerceIn(0f, 1f) }
+}
+
+enum class HeatmapMetric { CHECK_INS, FOCUS_DURATION }
+
+data class HeatmapData(val metric: HeatmapMetric, val values: Map<LocalDate, Long>)
+
 data class TimelineItem(
     val id: String,
     val atMillis: Long,
@@ -46,7 +58,9 @@ data class StatsData(
     val timeline: List<TimelineItem>,
     val badges: List<Badge>,
     val checks: List<CheckIn> = emptyList(),
-    val goalProgress: Map<String, Long> = emptyMap(),
+    val tasks: List<Task> = emptyList(),
+    val sessions: List<FocusSession> = emptyList(),
+    val goalProgress: Map<String, GoalProgress> = emptyMap(),
 ) {
     fun aggregate(date: LocalDate): DayAggregate = days[date] ?: DayAggregate(date)
     val unlockedBadges: Int get() = badges.count { it.unlockedAt != null }
@@ -101,12 +115,18 @@ object StatsCalculator {
         val perfectDays = countPerfectDays(today, habits, activeChecks)
         val timeline = buildTimeline(activeChecks, activeFocus, taskById, zone)
         val goalProgress = goalRules.associate { goal ->
-            val count = activeChecks.count { it.taskId == goal.taskId && !it.date.isBefore(goal.startDate) && !it.date.isAfter(goal.endDate) }
+            val count = activeChecks.filter {
+                it.taskId == goal.taskId && !it.date.isBefore(goal.startDate) && !it.date.isAfter(goal.endDate)
+            }.sumOf { max(1, it.count).toLong() }
             val seconds = activeFocus.filter {
                 it.taskId == goal.taskId &&
                     Instant.ofEpochMilli(it.endedAt).atZone(zone).toLocalDate().let { d -> !d.isBefore(goal.startDate) && !d.isAfter(goal.endDate) }
             }.sumOf { it.actualSeconds.toLong() }
-            goal.taskId to if (goal.targetTotalSeconds != null) seconds else count.toLong()
+            goal.taskId to if (goal.targetTotalSeconds != null) {
+                GoalProgress(used = seconds, target = goal.targetTotalSeconds, unit = "小时")
+            } else {
+                GoalProgress(used = count, target = goal.targetTotalCount?.toLong(), unit = "次")
+            }
         }
 
         return StatsData(
@@ -123,6 +143,8 @@ object StatsCalculator {
             timeline = timeline,
             badges = badges,
             checks = activeChecks,
+            tasks = tasks.filter { it.deletedAt == null }.sortedBy { it.createdAt },
+            sessions = activeFocus,
             goalProgress = goalProgress,
         )
     }

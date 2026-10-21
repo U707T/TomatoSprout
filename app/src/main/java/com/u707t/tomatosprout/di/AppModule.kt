@@ -16,6 +16,7 @@ import com.u707t.tomatosprout.domain.CheckInRepository
 import com.u707t.tomatosprout.domain.FocusRepository
 import com.u707t.tomatosprout.domain.ReminderRepository
 import com.u707t.tomatosprout.domain.SettingsRepository
+import com.u707t.tomatosprout.domain.SubTaskRepository
 import com.u707t.tomatosprout.domain.SystemAppClock
 import com.u707t.tomatosprout.domain.TaskRepository
 import com.u707t.tomatosprout.domain.WishRepository
@@ -34,10 +35,11 @@ object AppModule {
     @Singleton
     fun database(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.NAME)
-            // 首次发布；未来版本一律 addMigrations(...)，禁止 destructive migration
+            .addMigrations(AppDatabase.MIGRATION_1_2)
             .build()
 
     @Provides fun taskDao(db: AppDatabase) = db.taskDao()
+    @Provides fun subTaskDao(db: AppDatabase) = db.subTaskDao()
     @Provides fun habitDao(db: AppDatabase) = db.habitRuleDao()
     @Provides fun goalDao(db: AppDatabase) = db.goalRuleDao()
     @Provides fun checkInDao(db: AppDatabase) = db.checkInDao()
@@ -56,6 +58,7 @@ object AppModule {
 @InstallIn(SingletonComponent::class)
 abstract class BindModule {
     @Binds @Singleton abstract fun taskRepo(impl: TaskRepositoryImpl): TaskRepository
+    @Binds @Singleton abstract fun subTaskRepo(impl: TaskRepositoryImpl): SubTaskRepository
     @Binds @Singleton abstract fun checkInRepo(impl: CheckInRepositoryImpl): CheckInRepository
     @Binds @Singleton abstract fun focusRepo(impl: FocusRepositoryImpl): FocusRepository
     @Binds @Singleton abstract fun badgeRepo(impl: BadgeRepositoryImpl): BadgeRepository

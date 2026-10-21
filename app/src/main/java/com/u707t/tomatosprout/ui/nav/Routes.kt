@@ -6,19 +6,35 @@ import kotlinx.serialization.Serializable
 data object TodayRoute
 
 @Serializable
-data object FocusRoute
+data class FocusRoute(
+    val taskId: String? = null,
+    val timerMode: String? = null,
+    val minutes: Int? = null,
+)
 
 @Serializable
-data object StatsRoute
+data class StatsRoute(val taskId: String? = null, val date: String? = null)
+
+@Serializable
+data class CalendarRoute(val taskId: String? = null, val date: String? = null)
 
 @Serializable
 data object SettingsRoute
 
 @Serializable
-data class EditRoute(val taskId: String? = null)
+data class EditRoute(
+    val taskId: String? = null,
+    val prefillTitle: String? = null,
+    val prefillType: String? = null,
+    val prefillTimerMode: String? = null,
+    val prefillMinutes: Int? = null,
+)
 
 @Serializable
 data object TasksRoute
+
+@Serializable
+data object ArchiveRoute
 
 @Serializable
 data object BadgesRoute

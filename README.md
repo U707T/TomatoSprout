@@ -2,7 +2,7 @@
 
 轻量打卡 + 番茄专注 + 数据回顾。原生 Android（Kotlin + Jetpack Compose），**不索权、不打扰、不空洞**。
 
-> 只申请 3 个权限：`POST_NOTIFICATIONS`（可选）、`INTERNET`、`ACCESS_NETWORK_STATE`。
+> 只申请 4 个权限：`POST_NOTIFICATIONS`（可选）、`INTERNET`、`ACCESS_NETWORK_STATE`、`RECEIVE_BOOT_COMPLETED`（重启恢复本地提醒）。
 > 没有使用情况监听、没有无障碍、没有悬浮窗、没有桌面小组件、没有托管后端。
 
 ## 功能
@@ -14,7 +14,8 @@
 - **成就徽章**：连续 7/30/100 天、100 次打卡、100 小时专注、50 个番茄、圆满日等，解锁有轻量缩放淡入动效。
 - **数据资产**：JSON 全量备份 / CSV 打卡导出 / JSON 导入（字段校验 + 冲突提示）。
 - **WebDAV**：手动双向同步、哈希 + ETag 比对、只增不删、冲突副本保留、同步日志、仅 Wi-Fi、失败最多重试 3 次。
-- 深色模式、系统字体缩放、TalkBack 基础标签、48dp 点击区域。
+- **v1.5**：任务大卡片流、快捷添加、长按毛玻璃快捷面板、沉浸式全屏计时（屏幕常亮/亮度/本地白噪音/分享海报）、日历时间轴、统计环形图与月度柱状图。
+- 深色模式（DarkGray 背景 / LightGray 文字）、系统字体缩放、TalkBack 基础标签、48dp 点击区域。
 
 ## 权限
 
@@ -23,8 +24,9 @@
 | `POST_NOTIFICATIONS` | 习惯提醒 / 专注实时活动 | 是，静默降级 |
 | `INTERNET` | 仅手动 WebDAV 同步 | — |
 | `ACCESS_NETWORK_STATE` | 仅 Wi-Fi 同步判断 | — |
+| `RECEIVE_BOOT_COMPLETED` | 重启后恢复本地提醒闹钟 | — |
 
-WorkManager 传递引入的 `WAKE_LOCK` / `RECEIVE_BOOT_COMPLETED` / `FOREGROUND_SERVICE` 已在 Manifest 中显式移除。文件导出/导入使用 SAF，不申请存储权限。
+WorkManager 传递引入的 `WAKE_LOCK` / `FOREGROUND_SERVICE` 已在 Manifest 中显式移除；`RECEIVE_BOOT_COMPLETED` 仅用于重启恢复本地提醒。文件导出/导入使用 SAF，不申请存储权限。
 
 ## 工程结构
 
@@ -44,15 +46,22 @@ WorkManager 传递引入的 `WAKE_LOCK` / `RECEIVE_BOOT_COMPLETED` / `FOREGROUND
 ```bash
 export ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk
 ./gradlew :core:domain:test          # 24 个纯 JVM 单测
+./gradlew :app:lintDebug             # 静态检查（0 error）
 ./gradlew :app:testDebugUnitTest
 ./gradlew :app:assembleDebug
 ```
 
 发布包由 GitHub Actions 构建并签名；push `main` 后自动上传 Release。签名材料只在本地/Secrets，不进仓库。
 
+## v1.5 UI 结构
+
+- 底栏：今日 / 任务 / 专注 / 统计 / 我的；日历时间轴从今日或统计右上角进入
+- 任务页：大卡片流 + 快捷添加 + 长按毛玻璃快捷面板
+- 专注页：全屏沉浸计时（无底栏），返回箭头退出；状态跨页面由 SharedPreferences 快照恢复
+
 ## 设计取舍
 
-- **提醒**：用 `AlarmManager.setAndAllowWhileIdle`，不申请 `SCHEDULE_EXACT_ALARM`，因此可能延迟几分钟；未申请 `RECEIVE_BOOT_COMPLETED`，重启后需打开 App 恢复排期。
+- **提醒**：用 `AlarmManager.setAndAllowWhileIdle`，不申请 `SCHEDULE_EXACT_ALARM`，因此可能延迟几分钟；已申请 `RECEIVE_BOOT_COMPLETED`，开机/应用更新后由 BootReceiver 重排。
 - **计时**：基于 `SystemClock.elapsedRealtime()` 的单调时钟；回前台按真实流逝校正，进程被杀后从 DataStore/SharedPreferences 快照恢复。若进程在计时中死亡，通知会停留在最后一次更新，直到回到 App 结算；不申请前台服务常驻。
 - **实时活动**：视觉形态取决于 ROM 对 Heads-Up 通知的渲染，App 内提供了标准降级外观。通知按钮使用 Activity PendingIntent，规避 Android 12+ 的通知 trampoline 限制。
 - **WebDAV**：只支持用户自填服务器，无任何托管后端 SDK；未配置时零网络请求。

@@ -42,6 +42,7 @@ class SettingsViewModel @Inject constructor(
     fun setDndEnd(value: String) = update { it.copy(dndEnd = value) }
     fun setFocusMinutes(value: Int) = update { it.copy(defaultFocusMinutes = value.coerceIn(5, 180)) }
     fun setBreakMinutes(value: Int) = update { it.copy(defaultBreakMinutes = value.coerceIn(5, 30)) }
+    fun setIgnoreShortFocus(enabled: Boolean) = update { it.copy(ignoreShortFocus = enabled) }
     fun setStrict(enabled: Boolean) = update { it.copy(strictMode = enabled) }
     fun setCountUp(enabled: Boolean) = update { it.copy(countUpMode = enabled) }
     fun setMidnight(enabled: Boolean) = update { it.copy(midnightShift = enabled) }

@@ -25,6 +25,21 @@ data class Task(
     val updatedAt: Long,
     val deletedAt: Long? = null,
     val parentId: String? = null,
+    /** 任务卡片流中的手动排序；越小越靠前。 */
+    val sortOrder: Int = 0,
+    /** countdown / countup / none */
+    val timerMode: String = "countdown",
+    val focusMinutes: Int = 25,
+)
+
+/** 独立子任务表（v2）。父任务状态由全部子任务自动汇总。 */
+data class SubTask(
+    val id: String,
+    val parentTaskId: String,
+    val title: String,
+    val done: Boolean = false,
+    val sortOrder: Int = 0,
+    val createdAt: Long = 0L,
 )
 
 data class HabitRule(
@@ -68,6 +83,7 @@ data class FocusSession(
     val endedAt: Long,
     val isMidnightShifted: Boolean = false,
     val interruptionCount: Int = 0,
+    val note: String? = null,
     val deletedAt: Long? = null,
 )
 
@@ -105,6 +121,7 @@ data class AppSettings(
     val dndEnd: String = "07:00",
     val defaultFocusMinutes: Int = 25,
     val defaultBreakMinutes: Int = 5,
+    val ignoreShortFocus: Boolean = true,
     val strictMode: Boolean = false,
     val countUpMode: Boolean = false,
     val midnightShift: Boolean = true,

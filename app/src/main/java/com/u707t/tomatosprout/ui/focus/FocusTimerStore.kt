@@ -1,6 +1,7 @@
 package com.u707t.tomatosprout.ui.focus
 
 import android.content.Context
+import android.os.SystemClock
 import android.provider.Settings
 import com.u707t.tomatosprout.domain.TimerMode
 import com.u707t.tomatosprout.domain.TimerPhase
@@ -53,6 +54,11 @@ object FocusTimerStore {
             ?: TimerMode.COUNTDOWN
         val running = p.getLong(KEY_RUNNING_SINCE, -1L).takeIf { it >= 0 }
         if (phase == TimerPhase.RUNNING && running == null) return null
+        // 单调时钟比快照还小，说明设备重启/时钟异常，旧计时不可恢复
+        if (running != null && running > SystemClock.elapsedRealtime() + 5_000) {
+            clear(context)
+            return null
+        }
         val state = TimerState(
             mode = mode,
             phase = phase,

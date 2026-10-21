@@ -22,6 +22,7 @@ import javax.inject.Singleton
 
 object NotificationIds {
     const val FOCUS_LIVE = 1001
+    const val FOCUS_FALLBACK = 1002
     const val REMINDER_BASE = 2000
 }
 

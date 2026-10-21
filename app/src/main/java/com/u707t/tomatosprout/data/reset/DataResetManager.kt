@@ -4,6 +4,7 @@ import com.u707t.tomatosprout.data.db.BadgeDao
 import com.u707t.tomatosprout.data.db.CheckInDao
 import com.u707t.tomatosprout.data.db.FocusDao
 import com.u707t.tomatosprout.data.db.ReminderDao
+import com.u707t.tomatosprout.data.db.SubTaskDao
 import com.u707t.tomatosprout.data.db.SyncDao
 import com.u707t.tomatosprout.data.db.TaskDao
 import com.u707t.tomatosprout.data.db.WishDao
@@ -18,6 +19,7 @@ import javax.inject.Singleton
 @Singleton
 class DataResetManager @Inject constructor(
     private val tasks: TaskDao,
+    private val subTasks: SubTaskDao,
     private val checkIns: CheckInDao,
     private val focus: FocusDao,
     private val wishes: WishDao,
@@ -29,6 +31,7 @@ class DataResetManager @Inject constructor(
     suspend fun resetAll() {
         val now = clock.nowMillis()
         tasks.softDeleteAll(now)
+        subTasks.deleteAll()
         checkIns.softDeleteAll(now)
         focus.softDeleteAll(now)
         wishes.softDeleteAll(now)

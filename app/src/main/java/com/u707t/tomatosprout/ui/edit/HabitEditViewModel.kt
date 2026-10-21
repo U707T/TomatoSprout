@@ -7,6 +7,7 @@ import com.u707t.tomatosprout.domain.Frequency
 import com.u707t.tomatosprout.domain.GoalRule
 import com.u707t.tomatosprout.domain.HabitRule
 import com.u707t.tomatosprout.domain.ReminderRule
+import com.u707t.tomatosprout.domain.SubTask
 import com.u707t.tomatosprout.domain.Task
 import com.u707t.tomatosprout.domain.TaskStatus
 import com.u707t.tomatosprout.domain.TaskType
@@ -41,7 +42,9 @@ data class EditState(
     val reminderTime: String = "20:00",
     val goalTarget: String = "",
     val goalEndDate: LocalDate = LocalDate.now().plusDays(30),
-    val subtasks: List<Task> = emptyList(),
+    val timerMode: String = "countdown",
+    val focusMinutes: Int = 25,
+    val subtasks: List<SubTask> = emptyList(),
     val loading: Boolean = true,
     val saving: Boolean = false,
     val error: String? = null,
@@ -56,12 +59,17 @@ class HabitEditViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val taskId: String? = savedStateHandle.get<String>("taskId")
+    private val prefillTitle: String? = savedStateHandle.get<String>("prefillTitle")
+    private val prefillType: String? = savedStateHandle.get<String>("prefillType")
+    private val prefillTimerMode: String? = savedStateHandle.get<String>("prefillTimerMode")
+    private val prefillMinutes: Int? = savedStateHandle.get<Int>("prefillMinutes")
     private val _state = MutableStateFlow(EditState(taskId = taskId))
     val state: StateFlow<EditState> = _state.asStateFlow()
     val saved = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     private var createdAt: Long = System.currentTimeMillis()
     private var existingStatus: TaskStatus = TaskStatus.TODO
+    private var existingSortOrder: Int = 0
     private var existingReminderId: String? = null
 
     init {
@@ -70,7 +78,15 @@ class HabitEditViewModel @Inject constructor(
 
     private suspend fun load() {
         if (taskId == null) {
-            _state.update { it.copy(loading = false) }
+            _state.update {
+                it.copy(
+                    loading = false,
+                    title = prefillTitle ?: it.title,
+                    type = prefillType?.let { value -> runCatching { TaskType.valueOf(value) }.getOrNull() } ?: it.type,
+                    timerMode = prefillTimerMode ?: it.timerMode,
+                    focusMinutes = prefillMinutes?.coerceIn(5, 180) ?: it.focusMinutes,
+                )
+            }
             return
         }
         val task = useCase.task(taskId)
@@ -80,6 +96,7 @@ class HabitEditViewModel @Inject constructor(
         }
         createdAt = task.createdAt
         existingStatus = task.status
+        existingSortOrder = task.sortOrder
         val habit = useCase.habitRule(taskId)
         val goal = useCase.goalRule(taskId)
         val reminder = useCase.reminder(taskId)
@@ -104,6 +121,8 @@ class HabitEditViewModel @Inject constructor(
                 reminderTime = reminder?.timeOfDay ?: "20:00",
                 goalTarget = goal?.targetTotalCount?.toString().orEmpty(),
                 goalEndDate = goal?.endDate ?: LocalDate.now().plusDays(30),
+                timerMode = task.timerMode,
+                focusMinutes = task.focusMinutes,
                 subtasks = children,
                 loading = false,
             )
@@ -128,6 +147,8 @@ class HabitEditViewModel @Inject constructor(
     fun setGoalTarget(value: String) = edit { it.copy(goalTarget = value.filter { c -> c.isDigit() }.take(7)) }
     fun setGoalEndDate(value: LocalDate) = edit { it.copy(goalEndDate = value) }
     fun setDueAt(value: Long?) = edit { it.copy(dueAt = value) }
+    fun setTimerMode(value: String) = edit { it.copy(timerMode = value) }
+    fun setFocusMinutes(value: Int) = edit { it.copy(focusMinutes = value.coerceIn(5, 180)) }
     fun clearError() = edit { it.copy(error = null) }
 
     fun save() {
@@ -162,6 +183,9 @@ class HabitEditViewModel @Inject constructor(
                 updatedAt = now,
                 status = existingStatus,
                 parentId = useCase.task(id)?.parentId,
+                sortOrder = existingSortOrder,
+                timerMode = current.timerMode,
+                focusMinutes = current.focusMinutes,
             )
             val habit = if (current.type == TaskType.HABIT) {
                 HabitRule(
@@ -181,7 +205,7 @@ class HabitEditViewModel @Inject constructor(
                     targetTotalCount = current.goalTarget.toIntOrNull(),
                 )
             } else null
-            val reminder = if (current.type == TaskType.HABIT && current.reminderEnabled) {
+            val reminder = if (current.reminderEnabled) {
                 ReminderRule(
                     id = existingReminderId ?: UUID.randomUUID().toString(),
                     taskId = id,
@@ -196,6 +220,11 @@ class HabitEditViewModel @Inject constructor(
             } else null
             runCatching {
                 useCase.save(task, habit, goal, reminder)
+                // 新建任务时先暂存子任务，主任务落库后再写入
+                current.subtasks.filter { it.parentTaskId.isBlank() }.forEach { draft ->
+                    val created = useCase.addSubtask(id, draft.title, now)
+                    if (draft.done) useCase.setSubtaskDone(created, true)
+                }
             }.onFailure { e ->
                 edit { it.copy(saving = false, error = e.message ?: "保存失败") }
                 return@launch
@@ -219,40 +248,47 @@ class HabitEditViewModel @Inject constructor(
     }
 
     fun addSubtask(title: String) {
-        val parent = _state.value.taskId ?: return
         if (title.isBlank()) return
-        viewModelScope.launch {
-            val now = System.currentTimeMillis()
-            useCase.save(
-                Task(
-                    id = UUID.randomUUID().toString(),
-                    type = TaskType.TODO,
-                    title = title.trim(),
-                    createdAt = now,
-                    updatedAt = now,
-                    parentId = parent,
-                ),
-                null, null, null,
+        val current = _state.value
+        val parent = current.taskId
+        if (parent == null) {
+            val draft = SubTask(
+                id = UUID.randomUUID().toString(),
+                parentTaskId = "",
+                title = title.trim(),
+                sortOrder = current.subtasks.size,
+                createdAt = System.currentTimeMillis(),
             )
+            edit { it.copy(subtasks = it.subtasks + draft) }
+            return
+        }
+        viewModelScope.launch {
+            useCase.addSubtask(parent, title, System.currentTimeMillis())
             val children = useCase.subtasks(parent)
             edit { it.copy(subtasks = children) }
         }
     }
 
-    fun toggleSubtask(task: Task) {
+    fun toggleSubtask(subTask: SubTask) {
+        if (subTask.parentTaskId.isBlank()) {
+            edit { state -> state.copy(subtasks = state.subtasks.map { if (it.id == subTask.id) it.copy(done = !it.done) else it }) }
+            return
+        }
         viewModelScope.launch {
-            useCase.setDone(task, task.status != TaskStatus.DONE, System.currentTimeMillis())
-            val parent = _state.value.taskId ?: return@launch
-            val children = useCase.subtasks(parent)
+            useCase.setSubtaskDone(subTask, !subTask.done)
+            val children = useCase.subtasks(subTask.parentTaskId)
             edit { it.copy(subtasks = children) }
         }
     }
 
-    fun deleteSubtask(task: Task) {
+    fun deleteSubtask(subTask: SubTask) {
+        if (subTask.parentTaskId.isBlank()) {
+            edit { state -> state.copy(subtasks = state.subtasks.filterNot { it.id == subTask.id }) }
+            return
+        }
         viewModelScope.launch {
-            useCase.delete(task, System.currentTimeMillis())
-            val parent = _state.value.taskId ?: return@launch
-            val children = useCase.subtasks(parent)
+            useCase.deleteSubtask(subTask)
+            val children = useCase.subtasks(subTask.parentTaskId)
             edit { it.copy(subtasks = children) }
         }
     }

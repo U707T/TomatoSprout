@@ -4,7 +4,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import java.time.Instant
 import java.time.LocalDate
@@ -16,15 +18,63 @@ import kotlin.math.max
 class TaskUseCase @Inject constructor(
     private val tasks: TaskRepository,
     private val reminders: ReminderRepository,
+    private val subTasks: SubTaskRepository,
 ) {
     fun observeActive(): Flow<List<Task>> = tasks.observeActiveTasks()
     fun observeAll(): Flow<List<Task>> = tasks.observeAllTasks()
 
     suspend fun task(id: String): Task? = tasks.task(id)
+    suspend fun updateTask(task: Task) = tasks.upsert(task)
     suspend fun habitRule(id: String): HabitRule? = tasks.habitRule(id)
     suspend fun goalRule(id: String): GoalRule? = tasks.goalRule(id)
     suspend fun reminder(taskId: String): ReminderRule? = reminders.forTask(taskId)
-    suspend fun subtasks(parentId: String): List<Task> = tasks.tasksByParent(parentId)
+    fun observeSubtasks(parentId: String): Flow<List<SubTask>> = subTasks.observeForParent(parentId)
+    suspend fun subtasks(parentId: String): List<SubTask> = subTasks.forParent(parentId)
+
+    suspend fun addSubtask(parentId: String, title: String, at: Long): SubTask {
+        val existing = subTasks.forParent(parentId)
+        val item = SubTask(
+            id = UUID.randomUUID().toString(),
+            parentTaskId = parentId,
+            title = title.trim(),
+            done = false,
+            sortOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1,
+            createdAt = at,
+        )
+        subTasks.upsert(item)
+        refreshParent(parentId)
+        return item
+    }
+
+    suspend fun setSubtaskDone(subTask: SubTask, done: Boolean) {
+        subTasks.upsert(subTask.copy(done = done))
+        refreshParent(subTask.parentTaskId)
+    }
+
+    suspend fun deleteSubtask(subTask: SubTask) {
+        subTasks.delete(subTask.id)
+        refreshParent(subTask.parentTaskId)
+    }
+
+    /** 任务卡片流中的上移/下移；首次移动时把隐式顺序固化为 sortOrder。 */
+    suspend fun moveTask(taskId: String, delta: Int, at: Long) {
+        val all = tasks.captureAll().tasks
+            .filter { it.deletedAt == null && it.status != TaskStatus.ARCHIVED && it.parentId == null }
+            .sortedWith(compareBy({ it.sortOrder }, { it.priority }, { it.createdAt }))
+        val index = all.indexOfFirst { it.id == taskId }
+        val target = index + delta
+        if (index < 0 || target !in all.indices) return
+        val normalized = all.all { it.sortOrder == 0 }
+        if (normalized) {
+            all.forEachIndexed { i, task -> tasks.updateSortOrder(task.id, i + 1, at) }
+        }
+        val current = all[index]
+        val swapped = all[target]
+        val currentOrder = if (normalized) index + 1 else current.sortOrder
+        val swappedOrder = if (normalized) target + 1 else swapped.sortOrder
+        tasks.updateSortOrder(current.id, swappedOrder, at)
+        tasks.updateSortOrder(swapped.id, currentOrder, at)
+    }
 
     suspend fun save(
         task: Task,
@@ -58,11 +108,13 @@ class TaskUseCase @Inject constructor(
         reminders.deleteForTask(task.id)
     }
 
-    /** 子任务全部完成 → 父任务自动完成；否则回到未完成。 */
+    /** 子任务全部完成 → 父任务自动完成；任一取消则回退。 */
     suspend fun refreshParent(parentId: String) {
-        val children = tasks.tasksByParent(parentId).filter { it.deletedAt == null }
+        val parent = tasks.task(parentId) ?: return
+        if (parent.status == TaskStatus.ARCHIVED) return
+        val children = subTasks.forParent(parentId)
         if (children.isEmpty()) return
-        val allDone = children.all { it.status == TaskStatus.DONE }
+        val allDone = children.all { it.done }
         tasks.setStatus(parentId, if (allDone) TaskStatus.DONE else TaskStatus.TODO, System.currentTimeMillis())
     }
 }
@@ -291,7 +343,7 @@ class FocusUseCase @Inject constructor(
             interruptionCount = interruptionCount,
         )
         focus.insert(session)
-        if (task != null && task.type == TaskType.HABIT) {
+        if (task != null && task.type == TaskType.HABIT && actualSeconds >= 30) {
             val habit = tasks.habitRule(task.id)
             val date = SessionAttribution.dateOf(startedAt, midnightShift, clock.zone())
             val exists = habit != null && checkIns.forTask(task.id).any { it.date == date && it.deletedAt == null }
@@ -360,6 +412,19 @@ class BadgeUseCase @Inject constructor(
             Badge(it.key, it.key, it.name, "{}", at, it.description)
         }
     }
+}
+
+class HeatmapUseCase @Inject constructor(
+    private val stats: StatsUseCase,
+) {
+    /** 两个独立 Flow，UI 切换维度时不需要重新查库（Room 会共享同一份冷流缓存）。 */
+    fun observeCheckIns(): Flow<HeatmapData> = stats.observe()
+        .map { data -> HeatmapData(HeatmapMetric.CHECK_INS, data.days.mapValues { it.value.checkIns.toLong() }) }
+        .distinctUntilChanged()
+
+    fun observeFocusDuration(): Flow<HeatmapData> = stats.observe()
+        .map { data -> HeatmapData(HeatmapMetric.FOCUS_DURATION, data.days.mapValues { it.value.focusSeconds }) }
+        .distinctUntilChanged()
 }
 
 class StatsUseCase @Inject constructor(
