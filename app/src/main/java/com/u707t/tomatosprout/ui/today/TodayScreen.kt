@@ -308,7 +308,9 @@ private fun HabitItemCard(
                     if (item.checkedId != null) {
                         DropdownMenuItem(text = { Text("心情 / 备注") }, onClick = { menu = false; onMeta() })
                     }
-                    DropdownMenuItem(text = { Text("撤销打卡") }, onClick = { menu = false; onUndo() })
+                    if (item.count > 0) {
+                        DropdownMenuItem(text = { Text("撤销打卡") }, onClick = { menu = false; onUndo() })
+                    }
                 }
             }
             CheckCircle(

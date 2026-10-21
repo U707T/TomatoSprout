@@ -136,6 +136,14 @@ class HabitEditViewModel @Inject constructor(
             edit { it.copy(error = "给这件事起个名字吧") }
             return
         }
+        if (current.type == TaskType.HABIT && current.frequency == Frequency.WEEKLY && current.weekdaysMask == 0) {
+            edit { it.copy(error = "每周模式至少选择一个星期") }
+            return
+        }
+        if (current.type == TaskType.GOAL && current.goalEndDate.isBefore(current.startDate)) {
+            edit { it.copy(error = "截止日期不能早于开始日期") }
+            return
+        }
         if (current.saving) return
         edit { it.copy(saving = true) }
         viewModelScope.launch {

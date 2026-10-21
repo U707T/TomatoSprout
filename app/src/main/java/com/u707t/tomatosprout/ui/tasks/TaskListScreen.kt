@@ -76,7 +76,14 @@ fun TaskListScreen(
             ) {
                 item { Text("进行中 · ${s.active.size}", style = MaterialTheme.typography.titleMedium) }
                 items(s.active, key = { it.id }) { task ->
-                    TaskRow(task, onEdit = { onEdit(task.id) }, onRestore = null)
+                    TaskRow(
+                        task,
+                        onEdit = { onEdit(task.id) },
+                        onRestore = null,
+                        onReopen = if (task.status == TaskStatus.DONE) {
+                            { viewModel.reopen(task) }
+                        } else null,
+                    )
                 }
                 if (s.archived.isNotEmpty()) {
                     item {
@@ -91,6 +98,7 @@ fun TaskListScreen(
                             task,
                             onEdit = { onEdit(task.id) },
                             onRestore = { viewModel.restore(task) },
+                            onReopen = null,
                         )
                     }
                 }
@@ -100,7 +108,12 @@ fun TaskListScreen(
 }
 
 @Composable
-private fun TaskRow(task: Task, onEdit: () -> Unit, onRestore: (() -> Unit)?) {
+private fun TaskRow(
+    task: Task,
+    onEdit: () -> Unit,
+    onRestore: (() -> Unit)?,
+    onReopen: (() -> Unit)?,
+) {
     SoftCard(onClick = onEdit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(task.icon ?: "🌱", fontSize = 20.sp)
@@ -133,7 +146,7 @@ private fun TaskRow(task: Task, onEdit: () -> Unit, onRestore: (() -> Unit)?) {
             if (onRestore != null) {
                 TextButton(onClick = onRestore) { Text("恢复") }
             } else if (task.status == TaskStatus.DONE) {
-                Text("✓", color = MaterialTheme.colorScheme.secondary)
+                TextButton(onClick = onReopen ?: {}) { Text("重新打开") }
             }
         }
     }

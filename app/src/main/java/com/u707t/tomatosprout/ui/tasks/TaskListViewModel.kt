@@ -38,4 +38,8 @@ class TaskListViewModel @Inject constructor(private val useCase: TaskUseCase) : 
     fun restore(task: Task) {
         viewModelScope.launch { useCase.restore(task, System.currentTimeMillis()) }
     }
+
+    fun reopen(task: Task) {
+        viewModelScope.launch { useCase.setDone(task, false, System.currentTimeMillis()) }
+    }
 }
