@@ -167,7 +167,7 @@ class HistoryViewModel @Inject constructor(
             }
             .toList()
 
-        val records = (focusRecords + checkRecords).sortedByDescending { it.atMillis }
+        val records = (focusRecords + checkRecords).sortedBy { it.atMillis }
 
         val missing = data.habits
             .filter { habit ->

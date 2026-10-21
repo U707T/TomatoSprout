@@ -456,7 +456,18 @@ class FocusTimerViewModel @Inject constructor(
         val current = SystemClock.elapsedRealtime()
         val stopped = TimerEngine.stop(state, current)
         val elapsed = stopped.elapsedSeconds(current)
-        val endedAt = System.currentTimeMillis()
+        val nowWall = System.currentTimeMillis()
+        // 倒计时自然结束时，真实结束时刻是「开始 + 计划时长」；
+        // 若进程在后台被杀后才恢复，不能用恢复时刻把跨天归属算错。
+        val scheduledEnd = stopped.startedAtEpoch + stopped.plannedSeconds * 1000L
+        val endedAt = if (!stopped.isBreak &&
+            reason == FocusEndReason.COUNTDOWN_FINISHED &&
+            stopped.mode == TimerMode.COUNTDOWN
+        ) {
+            scheduledEnd.coerceAtMost(nowWall).coerceAtLeast(stopped.startedAtEpoch)
+        } else {
+            nowWall
+        }
         val task = currentTask()
         val taskTitle = if (stopped.isBreak) "休息" else (task?.title ?: "自由专注")
         val mode = if (stopped.mode == TimerMode.COUNTUP) "countup" else "pomodoro"

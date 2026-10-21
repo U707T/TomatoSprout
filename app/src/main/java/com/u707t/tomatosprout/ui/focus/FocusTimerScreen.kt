@@ -419,13 +419,15 @@ fun FocusTimerScreen(
                     }
                     DropdownMenu(expanded = audioMenu, onDismissRequest = { audioMenu = false }) {
                         FocusAudioOption.entries.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(option.label) },
-                                onClick = {
-                                    audioMenu = false
-                                    viewModel.selectAudio(option)
-                                },
-                            )
+                            key(option) {
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    onClick = {
+                                        audioMenu = false
+                                        viewModel.selectAudio(option)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
