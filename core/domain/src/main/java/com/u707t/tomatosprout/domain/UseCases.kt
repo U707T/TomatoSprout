@@ -81,6 +81,8 @@ data class TodayItem(
     val target: Int,
     val streak: Int,
     val checkedId: String? = null,
+    val note: String? = null,
+    val mood: Int? = null,
 )
 
 data class TodayData(
@@ -134,6 +136,8 @@ class CheckInUseCase @Inject constructor(
                         target = target,
                         streak = StreakCalculator.currentStreak(rule, checks.filter { it.taskId == task.id }, today),
                         checkedId = dayChecks.firstOrNull()?.id,
+                        note = dayChecks.firstOrNull()?.note,
+                        mood = dayChecks.firstOrNull()?.mood,
                     )
                 }
                 TaskType.TODO -> {
@@ -141,7 +145,10 @@ class CheckInUseCase @Inject constructor(
                         .atZone(clock.zone()).toLocalDate() <= today
                     if (task.status == TaskStatus.TODO && dueToday) {
                         val todayCheck = checks.firstOrNull { it.taskId == task.id && it.date == today && it.deletedAt == null }
-                        items += TodayItem(task, null, if (todayCheck != null) 1 else 0, todayCheck != null, 1, 0, todayCheck?.id)
+                        items += TodayItem(
+                            task, null, if (todayCheck != null) 1 else 0, todayCheck != null, 1, 0,
+                            todayCheck?.id, todayCheck?.note, todayCheck?.mood,
+                        )
                     }
                 }
                 else -> Unit

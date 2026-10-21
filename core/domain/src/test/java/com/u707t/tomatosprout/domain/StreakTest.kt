@@ -106,6 +106,18 @@ class StreakTest {
     }
 
     @Test
+    fun `timezone move leaving a future date does not break streak`() {
+        val earlierToday = today.minusDays(1)
+        val checks = listOf(
+            check(today),                    // 原时区已经写下的记录
+            check(today.minusDays(1)),
+            check(today.minusDays(2)),
+        )
+        // 设备时区向后调整，本地“今天”倒退一天：仍应保持 3 天连续
+        assertEquals(3, StreakCalculator.currentStreak(rule(), checks, earlierToday))
+    }
+
+    @Test
     fun `completion rate over scheduled window`() {
         val r = rule()
         val checks = listOf(check(today), check(today.minusDays(2)))

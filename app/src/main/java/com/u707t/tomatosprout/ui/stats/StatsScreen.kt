@@ -144,6 +144,8 @@ private fun StatsContent(
         }
         return if (scheduled == 0) 0f else met.toFloat() / scheduled
     }
+    val filterOptions = data.timeline.mapNotNull { item -> item.taskId?.let { it to item.title } }
+        .distinctBy { it.first }
     val filteredTimeline = data.timeline.filter { item ->
         (filterTask == null || item.taskId == filterTask) &&
             (rangeDays == 0 || !item.date.isBefore(data.today.minusDays(rangeDays.toLong() - 1)))
@@ -266,15 +268,15 @@ private fun StatsContent(
                 Text("历史记录", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Box {
                     TextButton(onClick = { taskMenu = true }) {
-                        Text(data.habits.firstOrNull { it.task.id == filterTask }?.task?.title ?: "全部任务")
+                        Text(filterOptions.firstOrNull { it.first == filterTask }?.second ?: "全部任务")
                         Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                     }
                     DropdownMenu(expanded = taskMenu, onDismissRequest = { taskMenu = false }) {
                         DropdownMenuItem(text = { Text("全部任务") }, onClick = { filterTask = null; taskMenu = false })
-                        data.habits.forEach { habit ->
+                        filterOptions.forEach { (id, title) ->
                             DropdownMenuItem(
-                                text = { Text(habit.task.title) },
-                                onClick = { filterTask = habit.task.id; taskMenu = false },
+                                text = { Text(title) },
+                                onClick = { filterTask = id; taskMenu = false },
                             )
                         }
                     }
@@ -359,7 +361,8 @@ private fun DayDetailDialog(
                     Text("当天没有排期的习惯。", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 scheduled.forEach { habit ->
-                    val done = data.checks.any { it.taskId == habit.task.id && it.date == date && it.deletedAt == null }
+                    val record = data.checks.firstOrNull { it.taskId == habit.task.id && it.date == date && it.deletedAt == null }
+                    val done = record != null
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             if (done) "✅" else "○",
@@ -376,6 +379,13 @@ private fun DayDetailDialog(
                             Text("已完成", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
                         }
                     }
+                    record?.note?.takeIf { it.isNotBlank() }?.let { note ->
+                        Text(
+                            "　" + (record.mood?.let { moodEmoji(it) + " " } ?: "") + note,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 if (!canMakeup && date.isBefore(data.today)) {
                     Text(
@@ -388,4 +398,13 @@ private fun DayDetailDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
     )
+}
+
+private fun moodEmoji(mood: Int): String = when (mood) {
+    1 -> "😌"
+    2 -> "🙂"
+    3 -> "😐"
+    4 -> "😮‍💨"
+    5 -> "😣"
+    else -> ""
 }

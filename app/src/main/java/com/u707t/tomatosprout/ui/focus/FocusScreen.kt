@@ -272,7 +272,7 @@ fun FocusScreen(viewModel: FocusViewModel = hiltViewModel()) {
                     Button(
                         onClick = viewModel::togglePause,
                         modifier = Modifier.weight(1f).height(52.dp),
-                        enabled = timer.strict.not() || timer.phase == TimerPhase.RUNNING,
+                        enabled = !(timer.strict && timer.phase == TimerPhase.RUNNING),
                     ) {
                         Text(
                             when (timer.phase) {

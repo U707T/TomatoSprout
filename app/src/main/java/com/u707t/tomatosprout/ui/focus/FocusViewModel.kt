@@ -122,8 +122,9 @@ class FocusViewModel @Inject constructor(
             while (true) {
                 delay(500)
                 ticks++
-                // 通知按钮在 Activity 已处于前台时不会触发 onResume，需轮询命令
-                if (ticks % 4 == 0) consumePendingCommand()
+                // 通知按钮在 Activity 已处于前台时不会触发 onResume，需轮询命令；
+                // 计时尚未恢复时不要抢消费，否则冷启动命令会丢
+                if (ticks % 4 == 0 && timer.value != null) consumePendingCommand()
                 val state = timer.value ?: continue
                 if (state.phase != TimerPhase.RUNNING) continue
                 val current = SystemClock.elapsedRealtime()
@@ -304,6 +305,10 @@ class FocusViewModel @Inject constructor(
     }
 
     private fun updateLive(state: TimerState, nowMono: Long) {
+        if (!settings.value.notificationsEnabled) {
+            live.cancel()
+            return
+        }
         if (state.isBreak) {
             live.update(state, nowMono, "休息一下")
             return

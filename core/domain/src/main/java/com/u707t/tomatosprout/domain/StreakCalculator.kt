@@ -69,9 +69,12 @@ object StreakCalculator {
      */
     fun currentStreak(rule: HabitRule, checkIns: List<CheckIn>, today: LocalDate): Int {
         if (today.isBefore(rule.startDate)) return 0
-        var cursor = today
-        if (HabitSchedule.isScheduled(rule, today) && !isMet(rule, checkIns, today)) {
-            cursor = today.minusDays(1)
+        // 跨时区旅行可能留下“未来日期”的记录；以最晚记录为基准，避免被误判为中断
+        val effective = checkIns.filter { it.taskId == rule.taskId && it.deletedAt == null }
+            .maxOfOrNull { it.date }?.let { maxOf(today, it) } ?: today
+        var cursor = effective
+        if (HabitSchedule.isScheduled(rule, effective) && !isMet(rule, checkIns, effective)) {
+            cursor = effective.minusDays(1)
         }
         var streak = 0
         var guard = 0
@@ -87,9 +90,11 @@ object StreakCalculator {
 
     fun longestStreak(rule: HabitRule, checkIns: List<CheckIn>, today: LocalDate): Int {
         if (today.isBefore(rule.startDate)) return 0
+        val effective = checkIns.filter { it.taskId == rule.taskId && it.deletedAt == null }
+            .maxOfOrNull { it.date }?.let { maxOf(today, it) } ?: today
         var best = 0
         var run = 0
-        for (date in HabitSchedule.datesBetween(rule, rule.startDate, today)) {
+        for (date in HabitSchedule.datesBetween(rule, rule.startDate, effective)) {
             if (isMet(rule, checkIns, date)) {
                 run++
                 best = max(best, run)

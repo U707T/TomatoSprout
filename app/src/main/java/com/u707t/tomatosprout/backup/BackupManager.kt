@@ -130,8 +130,11 @@ class BackupManager @Inject constructor(
         return null
     }
 
-    private fun csv(value: String): String =
-        if (value.contains(',') || value.contains('"') || value.contains('\n')) {
-            "\"" + value.replace("\"", "\"\"") + "\""
-        } else value
+    private fun csv(value: String): String {
+        // 防止 Excel 公式注入：用户数据以 = + - @ 开头时前置单引号
+        val safe = if (value.isNotEmpty() && value[0] in "=+-@") "'$value" else value
+        return if (safe.contains(',') || safe.contains('"') || safe.contains('\n')) {
+            "\"" + safe.replace("\"", "\"\"") + "\""
+        } else safe
+    }
 }

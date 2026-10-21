@@ -326,8 +326,8 @@ private fun MetaDialog(
     onDismiss: () -> Unit,
     onSave: (String, Int?) -> Unit,
 ) {
-    var note by remember { mutableStateOf("") }
-    var mood by remember { mutableStateOf<Int?>(null) }
+    var note by remember(item.task.id) { mutableStateOf(item.note.orEmpty()) }
+    var mood by remember(item.task.id) { mutableStateOf(item.mood) }
     val moods = listOf("😌" to 1, "🙂" to 2, "😐" to 3, "😮‍💨" to 4, "😣" to 5)
     AlertDialog(
         onDismissRequest = onDismiss,

@@ -43,7 +43,7 @@ WorkManager 传递引入的 `WAKE_LOCK` / `RECEIVE_BOOT_COMPLETED` / `FOREGROUND
 
 ```bash
 export ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk
-./gradlew :core:domain:test          # 23 个纯 JVM 单测
+./gradlew :core:domain:test          # 24 个纯 JVM 单测
 ./gradlew :app:testDebugUnitTest
 ./gradlew :app:assembleDebug
 ```

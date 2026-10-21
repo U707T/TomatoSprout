@@ -1,6 +1,7 @@
 package com.u707t.tomatosprout.ui.focus
 
 import android.content.Context
+import android.provider.Settings
 import com.u707t.tomatosprout.domain.TimerMode
 import com.u707t.tomatosprout.domain.TimerPhase
 import com.u707t.tomatosprout.domain.TimerState
@@ -18,6 +19,7 @@ object FocusTimerStore {
     private const val KEY_INTERRUPTIONS = "interruptions"
     private const val KEY_BREAK = "is_break"
     private const val KEY_TASK = "task_id"
+    private const val KEY_BOOT = "boot_count"
 
     data class Stored(val state: TimerState, val taskId: String?)
 
@@ -33,11 +35,17 @@ object FocusTimerStore {
             putInt(KEY_INTERRUPTIONS, state.interruptionCount)
             putBoolean(KEY_BREAK, state.isBreak)
             putString(KEY_TASK, taskId)
+            putInt(KEY_BOOT, bootCount(context))
         }.apply()
     }
 
     fun load(context: Context): Stored? {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // 重启后 elapsedRealtime 归零，旧快照不可恢复
+        if (p.getInt(KEY_BOOT, -1) != bootCount(context)) {
+            clear(context)
+            return null
+        }
         val phase = p.getString(KEY_PHASE, null)?.let { runCatching { TimerPhase.valueOf(it) }.getOrNull() }
             ?: return null
         if (phase == TimerPhase.IDLE || phase == TimerPhase.FINISHED) return null
@@ -62,4 +70,9 @@ object FocusTimerStore {
     fun clear(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
     }
+
+    private fun bootCount(context: Context): Int =
+        runCatching {
+            Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+        }.getOrDefault(-1)
 }
