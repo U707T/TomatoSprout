@@ -237,11 +237,15 @@ class HabitEditViewModel @Inject constructor(
         }
     }
 
-    fun archive() {
-        val task = _state.value
-        val id = task.taskId ?: return
+    /**
+     * v1.6：取消归档，直接软删除任务。
+     * CheckIn / FocusSession 不级联删除，历史页会显示「[已删除] 原任务名」。
+     */
+    fun delete() {
+        val current = _state.value
+        val id = current.taskId ?: return
         viewModelScope.launch {
-            useCase.task(id)?.let { useCase.archive(it, System.currentTimeMillis()) }
+            useCase.task(id)?.let { useCase.delete(it, System.currentTimeMillis()) }
             existingReminderId?.let { scheduler.cancel(it) }
             saved.emit(Unit)
         }

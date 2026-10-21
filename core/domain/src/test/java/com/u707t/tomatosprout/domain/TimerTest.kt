@@ -2,6 +2,7 @@ package com.u707t.tomatosprout.domain
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -64,13 +65,23 @@ class TimerTest {
     }
 
     @Test
-    fun `midnight attribution shifts early morning session to previous day`() {
+    fun `cross midnight defaults to end date and midnight mode uses start date`() {
         val zone = ZoneId.of("Asia/Shanghai")
-        val at0130 = ZonedDateTime.of(2026, 3, 2, 1, 30, 0, 0, zone).toInstant().toEpochMilli()
-        assertEquals("2026-03-01", SessionAttribution.dateOf(at0130, true, zone).toString())
-        assertEquals("2026-03-02", SessionAttribution.dateOf(at0130, false, zone).toString())
-        val at1000 = ZonedDateTime.of(2026, 3, 2, 10, 0, 0, 0, zone).toInstant().toEpochMilli()
-        assertEquals("2026-03-02", SessionAttribution.dateOf(at1000, true, zone).toString())
+        val start = ZonedDateTime.of(2026, 3, 1, 23, 50, 0, 0, zone).toInstant().toEpochMilli()
+        val end = ZonedDateTime.of(2026, 3, 2, 0, 20, 0, 0, zone).toInstant().toEpochMilli()
+        assertEquals("2026-03-02", SessionAttribution.dateOf(start, end, false, zone).toString())
+        assertEquals("2026-03-01", SessionAttribution.dateOf(start, end, true, zone).toString())
+        assertTrue(SessionAttribution.isShifted(start, end, zone))
+    }
+
+    @Test
+    fun `early morning session without crossing stays on the same day`() {
+        val zone = ZoneId.of("Asia/Shanghai")
+        val start = ZonedDateTime.of(2026, 3, 2, 1, 30, 0, 0, zone).toInstant().toEpochMilli()
+        val end = ZonedDateTime.of(2026, 3, 2, 2, 0, 0, 0, zone).toInstant().toEpochMilli()
+        assertEquals("2026-03-02", SessionAttribution.dateOf(start, end, true, zone).toString())
+        assertEquals("2026-03-02", SessionAttribution.dateOf(start, end, false, zone).toString())
+        assertTrue(!SessionAttribution.isShifted(start, end, zone))
     }
 
     @Test

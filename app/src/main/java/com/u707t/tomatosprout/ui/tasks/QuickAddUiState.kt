@@ -6,6 +6,7 @@ enum class QuickTaskType(val label: String, val taskType: TaskType) {
     POMODORO("普通番茄钟", TaskType.POMODORO),
     GOAL("定目标", TaskType.GOAL),
     HABIT("养习惯", TaskType.HABIT),
+    TODO("待办", TaskType.TODO),
 }
 
 enum class QuickTimerMode(val label: String, val storage: String) {

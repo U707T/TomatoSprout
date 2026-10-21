@@ -59,7 +59,7 @@ class TaskUseCase @Inject constructor(
     /** 任务卡片流中的上移/下移；首次移动时把隐式顺序固化为 sortOrder。 */
     suspend fun moveTask(taskId: String, delta: Int, at: Long) {
         val all = tasks.captureAll().tasks
-            .filter { it.deletedAt == null && it.status != TaskStatus.ARCHIVED && it.parentId == null }
+            .filter { it.deletedAt == null && it.parentId == null }
             .sortedWith(compareBy({ it.sortOrder }, { it.priority }, { it.createdAt }))
         val index = all.indexOfFirst { it.id == taskId }
         val target = index + delta
@@ -98,20 +98,26 @@ class TaskUseCase @Inject constructor(
         tasks.setStatus(task.id, TaskStatus.TODO, at)
     }
 
-    suspend fun archive(task: Task, at: Long) {
-        tasks.setStatus(task.id, TaskStatus.ARCHIVED, at)
-        reminders.deleteForTask(task.id)
-    }
-
+    /**
+     * 删除任务（v1.6）：
+     * - 任务本身软删除，列表立即消失；
+     * - 关联的 CheckIn / FocusSession **不删除**，历史与统计继续保留；
+     * - 删除提醒、习惯/目标规则与子任务，避免脏数据继续参与排期。
+     */
     suspend fun delete(task: Task, at: Long) {
         tasks.softDelete(task.id, at)
+        tasks.tasksByParent(task.id).forEach { child -> tasks.softDelete(child.id, at) }
         reminders.deleteForTask(task.id)
+        tasks.deleteHabitRule(task.id)
+        tasks.deleteGoalRule(task.id)
+        subTasks.deleteForParent(task.id)
+        task.parentId?.let { refreshParent(it) }
     }
 
     /** 子任务全部完成 → 父任务自动完成；任一取消则回退。 */
     suspend fun refreshParent(parentId: String) {
         val parent = tasks.task(parentId) ?: return
-        if (parent.status == TaskStatus.ARCHIVED) return
+        if (parent.deletedAt != null) return
         val children = subTasks.forParent(parentId)
         if (children.isEmpty()) return
         val allDone = children.all { it.done }
@@ -148,11 +154,18 @@ data class TodayData(
     val allDone: Boolean get() = habitTotal > 0 && habitDone >= habitTotal
 }
 
+data class CheckInOutcome(
+    val written: Boolean,
+    val checkInId: String?,
+    val streak: Int,
+    val newBadges: List<Badge> = emptyList(),
+)
+
 class CheckInUseCase @Inject constructor(
     private val tasks: TaskRepository,
     private val checkIns: CheckInRepository,
     private val focus: FocusRepository,
-    private val badges: BadgeUseCase,
+    private val badges: BadgeRefresher,
     private val clock: AppClock = SystemAppClock,
 ) {
     private fun dates(): Flow<LocalDate> = flow {
@@ -208,8 +221,8 @@ class CheckInUseCase @Inject constructor(
         }
         val habits = items.filter { it.task.type == TaskType.HABIT }
         val focusToday = sessions.filter {
-            it.deletedAt == null &&
-                Instant.ofEpochMilli(it.endedAt).atZone(clock.zone()).toLocalDate() == today
+            it.deletedAt == null && it.actualSeconds >= 0 &&
+                it.attributedLocalDate(clock.zone()) == today
         }.sumOf { it.actualSeconds.toLong() }
         TodayData(
             today = today,
@@ -221,39 +234,74 @@ class CheckInUseCase @Inject constructor(
         )
     }
 
-    suspend fun toggle(item: TodayItem): CheckInResult {
+    /** 兼容旧调用：按任务执行一次「打卡 / 撤销」。 */
+    suspend fun toggle(item: TodayItem): CheckInResult = toggleToday(item.task)
+
+    /**
+     * 习惯卡片上的直接打卡：
+     * - 目标次数 > 1 时逐次累加，达到目标后再点则整体撤销；
+     * - TODO 任务打卡后自动置为已完成；
+     * - 写入后刷新徽章并返回最新连续天数。
+     */
+    suspend fun toggleToday(task: Task): CheckInResult {
+        if (task.deletedAt != null) return CheckInResult.Rejected("任务已删除")
+        val now = clock.nowMillis()
         val today = clock.today()
-        val existing = checkIns.forTask(item.task.id)
-            .firstOrNull { it.date == today && it.deletedAt == null }
-        // 目标次数 > 1 时，逐次累加 count；达到目标后再点则整体撤销
-        if (existing != null && item.task.type == TaskType.HABIT && existing.count < max(1, item.target)) {
-            checkIns.updateCount(existing.id, existing.count + 1)
-            val newBadges = badges.refresh()
-            val streak = item.habit?.let {
-                StreakCalculator.currentStreak(it, checkIns.forTask(item.task.id).filter { c -> c.deletedAt == null }, today)
-            } ?: 0
-            return CheckInResult.Checked(streak, newBadges)
+        val rule = if (task.type == TaskType.HABIT) tasks.habitRule(task.id) else null
+        val target = max(1, rule?.targetCountPerPeriod ?: 1)
+        val existing = checkIns.forTask(task.id).filter { it.date == today && it.deletedAt == null }
+        val current = existing.firstOrNull()
+        if (current != null && rule != null && current.count < target) {
+            checkIns.updateCount(current.id, current.count + 1)
+            val newBadges = runCatching { badges.refresh() }.getOrDefault(emptyList())
+            return CheckInResult.Checked(streakOf(rule, today), newBadges)
         }
-        if (existing != null) {
-            removeAll(item)
+        if (existing.isNotEmpty()) {
+            existing.forEach { checkIns.softDelete(it.id, now) }
+            if (task.type == TaskType.TODO) {
+                tasks.setStatus(task.id, TaskStatus.TODO, now)
+                task.parentId?.let { tasks.setStatus(it, TaskStatus.TODO, now) }
+            }
             return CheckInResult.Undone()
         }
-        val now = clock.nowMillis()
-        insertCheckIn(item.task.id, today, source = "manual", isMakeup = false, now = now)
-        if (item.task.type == TaskType.TODO) {
-            tasks.setStatus(item.task.id, TaskStatus.DONE, now)
-            item.task.parentId?.let { parent ->
-                val siblings = tasks.tasksByParent(parent).filter { it.deletedAt == null }
-                if (siblings.all { it.status == TaskStatus.DONE }) {
-                    tasks.setStatus(parent, TaskStatus.DONE, now)
-                }
-            }
+        insertCheckIn(task.id, today, source = "manual", isMakeup = false, now = now)
+        if (task.type == TaskType.TODO) markDone(task, now)
+        val newBadges = runCatching { badges.refresh() }.getOrDefault(emptyList())
+        return CheckInResult.Checked(rule?.let { streakOf(it, today) } ?: 0, newBadges)
+    }
+
+    /**
+     * 专注结算专用：幂等写入指定日期的打卡。
+     * 已存在记录时，习惯类按目标次数累加；其它类型保持一条，不重复计数。
+     * 返回的 id 会写入 FocusSession.checkInId，方便回溯。
+     */
+    suspend fun recordFromFocus(task: Task, date: LocalDate, at: Long): CheckInOutcome {
+        if (task.deletedAt != null) return CheckInOutcome(false, null, 0)
+        val rule = if (task.type == TaskType.HABIT) tasks.habitRule(task.id) else null
+        val target = max(1, rule?.targetCountPerPeriod ?: 1)
+        val current = checkIns.forTask(task.id).firstOrNull { it.date == date && it.deletedAt == null }
+        var written = false
+        var id = current?.id
+        if (current == null) {
+            val created = insertCheckIn(task.id, date, source = "timer", isMakeup = false, now = at)
+            written = created != null
+            id = created?.id
+        } else if (rule != null && current.count < target) {
+            checkIns.updateCount(current.id, current.count + 1)
+            written = true
         }
-        val newBadges = badges.refresh()
-        val streak = item.habit?.let {
-            StreakCalculator.currentStreak(it, checkIns.forTask(item.task.id).filter { c -> c.deletedAt == null }, today)
-        } ?: 0
-        return CheckInResult.Checked(streak, newBadges)
+        if (task.type == TaskType.TODO) markDone(task, at)
+        val newBadges = if (written) {
+            runCatching { badges.refresh() }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+        return CheckInOutcome(
+            written = written,
+            checkInId = id,
+            streak = rule?.let { streakOf(it, clock.today()) } ?: 0,
+            newBadges = newBadges,
+        )
     }
 
     suspend fun undo(taskId: String, date: LocalDate) {
@@ -284,88 +332,53 @@ class CheckInUseCase @Inject constructor(
         if (existing) return CheckInResult.Rejected("该日期已经打过卡")
         val now = clock.nowMillis()
         insertCheckIn(task.id, date, source = "manual", isMakeup = true, now = now)
-        val newBadges = badges.refresh()
-        return CheckInResult.Checked(
-            StreakCalculator.currentStreak(habit, checkIns.forTask(task.id).filter { it.deletedAt == null }, today),
-            newBadges,
-        )
+        val newBadges = runCatching { badges.refresh() }.getOrDefault(emptyList())
+        return CheckInResult.Checked(streakOf(habit, today), newBadges)
     }
 
     suspend fun updateMeta(checkInId: String, note: String?, mood: Int?) {
         checkIns.updateMeta(checkInId, note?.takeIf { it.isNotBlank() }, mood)
     }
 
-    private suspend fun insertCheckIn(taskId: String, date: LocalDate, source: String, isMakeup: Boolean, now: Long) {
-        checkIns.insert(
-            CheckIn(
-                id = UUID.randomUUID().toString(),
-                taskId = taskId,
-                date = date,
-                count = 1,
-                source = source,
-                isMakeup = isMakeup,
-                createdAt = now,
-            ),
+    private suspend fun streakOf(rule: HabitRule, today: LocalDate): Int =
+        StreakCalculator.currentStreak(
+            rule,
+            checkIns.forTask(rule.taskId).filter { it.deletedAt == null },
+            today,
         )
-    }
-}
 
-data class FocusCompletion(val session: FocusSession, val newBadges: List<Badge>)
-
-class FocusUseCase @Inject constructor(
-    private val focus: FocusRepository,
-    private val tasks: TaskRepository,
-    private val checkIns: CheckInRepository,
-    private val badges: BadgeUseCase,
-    private val clock: AppClock = SystemAppClock,
-) {
-    /** 严格模式中断的番茄由调用方直接丢弃，不进入本方法。 */
-    suspend fun complete(
-        task: Task?,
-        mode: String,
-        plannedSeconds: Int,
-        actualSeconds: Int,
-        startedAt: Long,
-        endedAt: Long,
-        midnightShift: Boolean,
-        interruptionCount: Int,
-    ): FocusCompletion? {
-        if (actualSeconds < 1) return null
-        val session = FocusSession(
-            id = UUID.randomUUID().toString(),
-            taskId = task?.id,
-            mode = mode,
-            plannedSeconds = plannedSeconds,
-            actualSeconds = actualSeconds,
-            startedAt = startedAt,
-            endedAt = endedAt,
-            isMidnightShifted = SessionAttribution.isShifted(startedAt, midnightShift, clock.zone()),
-            interruptionCount = interruptionCount,
-        )
-        focus.insert(session)
-        if (task != null && task.type == TaskType.HABIT && actualSeconds >= 30) {
-            val habit = tasks.habitRule(task.id)
-            val date = SessionAttribution.dateOf(startedAt, midnightShift, clock.zone())
-            val exists = habit != null && checkIns.forTask(task.id).any { it.date == date && it.deletedAt == null }
-            if (habit != null && !exists) {
-                checkIns.insert(
-                    CheckIn(
-                        id = UUID.randomUUID().toString(),
-                        taskId = task.id,
-                        date = date,
-                        count = 1,
-                        source = "timer",
-                        isMakeup = false,
-                        createdAt = endedAt,
-                    ),
-                )
+    private suspend fun markDone(task: Task, at: Long) {
+        tasks.setStatus(task.id, TaskStatus.DONE, at)
+        task.parentId?.let { parent ->
+            val siblings = tasks.tasksByParent(parent).filter { it.deletedAt == null }
+            if (siblings.isNotEmpty() && siblings.all { it.status == TaskStatus.DONE }) {
+                tasks.setStatus(parent, TaskStatus.DONE, at)
             }
         }
-        if (task != null && task.type == TaskType.POMODORO) {
-            tasks.incrementCompletedPomos(task.id, 1, endedAt)
-        }
-        val newBadges = badges.refresh()
-        return FocusCompletion(session, newBadges)
+    }
+
+    private suspend fun insertCheckIn(
+        taskId: String,
+        date: LocalDate,
+        source: String,
+        isMakeup: Boolean,
+        now: Long,
+    ): CheckIn? {
+        val candidate = CheckIn(
+            id = UUID.randomUUID().toString(),
+            taskId = taskId,
+            date = date,
+            count = 1,
+            source = source,
+            isMakeup = isMakeup,
+            createdAt = now,
+        )
+        val inserted = checkIns.insert(candidate)
+        if (!inserted) return null
+        // 软删除复活时 id 会沿用旧记录，这里以数据库中的最新行为准
+        return checkIns.forTask(taskId)
+            .firstOrNull { it.date == date && it.isMakeup == isMakeup && it.deletedAt == null }
+            ?: candidate
     }
 }
 
@@ -375,12 +388,12 @@ class BadgeUseCase @Inject constructor(
     private val checkIns: CheckInRepository,
     private val focus: FocusRepository,
     private val clock: AppClock = SystemAppClock,
-) {
+) : BadgeRefresher {
     suspend fun ensureSeeded() {
         badges.seed(BadgeCatalog.seedBadges())
     }
 
-    suspend fun refresh(): List<Badge> {
+    override suspend fun refresh(): List<Badge> {
         val all = badges.all()
         val bundle = tasks.captureAll()
         val stats = StatsCalculator.build(
@@ -434,6 +447,14 @@ class StatsUseCase @Inject constructor(
     private val badges: BadgeRepository,
     private val clock: AppClock = SystemAppClock,
 ) {
+    /** 每分钟检查一次日期，跨午夜后让「今日」自动翻页；相同日期不重复发射。 */
+    private fun dateTicker(): Flow<LocalDate> = flow {
+        while (currentCoroutineContext().isActive) {
+            emit(clock.today())
+            delay(60_000)
+        }
+    }.distinctUntilChanged()
+
     fun observe(): Flow<StatsData> = combine(
         combine(tasks.observeAllTasks(), tasks.observeHabitRules(), tasks.observeGoalRules()) { t, h, g ->
             Triple(t, h, g)
@@ -441,9 +462,10 @@ class StatsUseCase @Inject constructor(
         checkIns.observeAll(),
         focus.observeAll(),
         badges.observeAll(),
-    ) { bundle, checks, sessions, badgeList ->
+        dateTicker(),
+    ) { bundle, checks, sessions, badgeList, today ->
         StatsCalculator.build(
-            today = clock.today(),
+            today = today,
             tasks = bundle.first,
             habitRules = bundle.second,
             goalRules = bundle.third,

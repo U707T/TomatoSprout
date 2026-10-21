@@ -74,6 +74,14 @@ interface BadgeRepository {
     suspend fun restoreAll(items: List<Badge>): MergeReport
 }
 
+/**
+ * 只暴露「刷新徽章」这一件事，避免 UseCase 之间直接依赖具体实现，
+ * 也便于在 JVM 单测里替换成空实现。
+ */
+fun interface BadgeRefresher {
+    suspend fun refresh(): List<Badge>
+}
+
 interface ReminderRepository {
     fun observeAll(): Flow<List<ReminderRule>>
     suspend fun all(): List<ReminderRule>

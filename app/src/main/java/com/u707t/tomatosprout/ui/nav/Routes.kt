@@ -2,8 +2,29 @@ package com.u707t.tomatosprout.ui.nav
 
 import kotlinx.serialization.Serializable
 
+/**
+ * v1.6 路由：
+ * - 底部导航只有 Todo / Stats / Settings；
+ * - History 是二级页，从统计页或任务长按面板进入；
+ * - Focus 是全屏页，不显示底栏。
+ */
 @Serializable
-data object TodayRoute
+data object TodoRoute
+
+@Serializable
+data class StatsRoute(
+    val taskId: String? = null,
+    val date: String? = null,
+)
+
+@Serializable
+data object SettingsRoute
+
+@Serializable
+data class HistoryRoute(
+    val taskId: String? = null,
+    val date: String? = null,
+)
 
 @Serializable
 data class FocusRoute(
@@ -13,15 +34,6 @@ data class FocusRoute(
 )
 
 @Serializable
-data class StatsRoute(val taskId: String? = null, val date: String? = null)
-
-@Serializable
-data class CalendarRoute(val taskId: String? = null, val date: String? = null)
-
-@Serializable
-data object SettingsRoute
-
-@Serializable
 data class EditRoute(
     val taskId: String? = null,
     val prefillTitle: String? = null,
@@ -29,12 +41,6 @@ data class EditRoute(
     val prefillTimerMode: String? = null,
     val prefillMinutes: Int? = null,
 )
-
-@Serializable
-data object TasksRoute
-
-@Serializable
-data object ArchiveRoute
 
 @Serializable
 data object BadgesRoute

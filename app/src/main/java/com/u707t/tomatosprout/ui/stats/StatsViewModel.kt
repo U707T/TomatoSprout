@@ -3,26 +3,23 @@ package com.u707t.tomatosprout.ui.stats
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.u707t.tomatosprout.domain.CheckInResult
-import com.u707t.tomatosprout.domain.CheckInUseCase
-import com.u707t.tomatosprout.domain.HabitSchedule
+import com.u707t.tomatosprout.domain.AppClock
 import com.u707t.tomatosprout.domain.StatsData
 import com.u707t.tomatosprout.domain.StatsUseCase
+import com.u707t.tomatosprout.domain.TaskDisplay
+import com.u707t.tomatosprout.domain.attributedLocalDate
 import com.u707t.tomatosprout.domain.today
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
-import java.time.Instant
 import java.time.temporal.TemporalAdjusters
 import javax.inject.Inject
 
@@ -36,15 +33,15 @@ sealed interface StatsUiState {
 @HiltViewModel
 class StatsViewModel @Inject constructor(
     private val stats: StatsUseCase,
-    private val checkIn: CheckInUseCase,
+    private val clock: AppClock,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    val messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val initialTaskFilter: String? = savedStateHandle.get<String>("taskId")
     private val taskFilter: String? = initialTaskFilter
     private val initialDate = savedStateHandle.get<String>("date")
         ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        ?: statsToday()
+        ?: clock.today()
+
     private val filter = MutableStateFlow(
         FilterState(
             selectedDate = initialDate,
@@ -53,14 +50,16 @@ class StatsViewModel @Inject constructor(
             customEnd = initialDate,
         ),
     )
-    private val statsFlow = stats.observe().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val statsFlow = stats.observe()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val ui: StateFlow<StatsUiState> = combine(statsFlow, filter) { data, f ->
-        if (data == null) return@combine StatsUiState.Loading
-        if (data.habits.isEmpty() && data.days.isEmpty()) {
-            StatsUiState.Empty(data.today) as StatsUiState
-        } else {
-            StatsUiState.Content(data, buildDashboard(data, f))
+        when {
+            data == null -> StatsUiState.Loading
+            data.habits.isEmpty() && data.days.isEmpty() && data.sessions.isEmpty() ->
+                StatsUiState.Empty(data.today)
+            else -> StatsUiState.Content(data, buildDashboard(data, f))
         }
     }
         .catch { emit(StatsUiState.Error(it.message ?: "统计加载失败")) }
@@ -72,8 +71,6 @@ class StatsViewModel @Inject constructor(
         val customStart: LocalDate,
         val customEnd: LocalDate,
     )
-
-    private fun statsToday(): LocalDate = LocalDate.now()
 
     fun selectDate(date: LocalDate) {
         filter.value = filter.value.copy(selectedDate = date)
@@ -114,7 +111,7 @@ class StatsViewModel @Inject constructor(
     }
 
     private fun buildDashboard(data: StatsData, f: FilterState): StatsDashboard {
-        val zone = ZoneId.systemDefault()
+        val zone: ZoneId = clock.zone()
         val selected = f.selectedDate
         val month = YearMonth.from(selected)
         val weekStart = selected.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
@@ -131,23 +128,30 @@ class StatsViewModel @Inject constructor(
             DistributionRange.MONTH -> month.atEndOfMonth()
             DistributionRange.CUSTOM -> f.customEnd
         }
+
+        // 第一道数据防线：过滤 duration < 0、结束时间非法的脏数据
+        val safeSessions = data.sessions.filter { it.actualSeconds >= 0 && it.endedAt > 0 }
         val taskById = data.tasks.associateBy { it.id }
-        val inRange = data.sessions.filter {
+        val inRange = safeSessions.filter {
             (taskFilter == null || it.taskId == taskFilter) &&
-                Instant.ofEpochMilli(it.endedAt).atZone(zone).toLocalDate().let { d ->
-                    !d.isBefore(rangeStart) && !d.isAfter(rangeEnd)
-                }
+                it.attributedLocalDate(zone).let { d -> !d.isBefore(rangeStart) && !d.isAfter(rangeEnd) }
         }
+
         val grouped = inRange.groupBy { it.taskId }
             .map { (taskId, sessions) ->
+                val task = taskId?.let { taskById[it] }
+                val deleted = taskId != null && TaskDisplay.isDeleted(task)
                 ChartSlice(
-                    label = taskId?.let { taskById[it]?.title } ?: "自由专注",
-                    seconds = sessions.sumOf { it.actualSeconds.toLong() },
+                    label = if (taskId == null) "自由专注" else TaskDisplay.title(task),
+                    seconds = sessions.sumOf { it.actualSeconds.toLong() }.coerceAtLeast(0L),
                     colorIndex = 0,
                     taskId = taskId,
+                    taskDeleted = deleted,
                 )
             }
+            .filter { it.seconds > 0 }
             .sortedByDescending { it.seconds }
+
         val top = grouped.take(6)
         val rest = grouped.drop(6)
         val slices = if (rest.isEmpty()) {
@@ -155,15 +159,15 @@ class StatsViewModel @Inject constructor(
         } else {
             top + ChartSlice(
                 label = "其他",
-                seconds = rest.sumOf { it.seconds },
+                seconds = rest.sumOf { it.seconds }.coerceAtLeast(0L),
                 colorIndex = 6,
                 taskId = null,
             )
         }
         val colored = slices.mapIndexed { index, slice -> slice.copy(colorIndex = index) }
-        val total = inRange.sumOf { it.actualSeconds.toLong() }
-        val focusDays = data.sessions
-            .map { Instant.ofEpochMilli(it.endedAt).atZone(zone).toLocalDate() }
+        val total = inRange.sumOf { it.actualSeconds.toLong() }.coerceAtLeast(0L)
+        val focusDays = safeSessions
+            .map { it.attributedLocalDate(zone) }
             .distinct()
             .size
             .coerceAtLeast(1)
@@ -172,10 +176,11 @@ class StatsViewModel @Inject constructor(
             val date = month.atDay(day)
             MonthlyBar(
                 day = day,
-                seconds = data.days[date]?.focusSeconds ?: 0L,
+                seconds = (data.days[date]?.focusSeconds ?: 0L).coerceAtLeast(0L),
                 selected = date == selected,
             )
         }
+        val barMax = (monthDays.maxOfOrNull { it.seconds } ?: 0L).coerceAtLeast(1L)
         return StatsDashboard(
             selectedDate = selected,
             range = f.range,
@@ -183,32 +188,15 @@ class StatsViewModel @Inject constructor(
             customEnd = f.customEnd,
             totalSeconds = total,
             totalFocusCount = inRange.size,
-            avgDailySeconds = data.totalFocusSeconds / focusDays,
-            dailyFocusCount = inRange.count {
-                Instant.ofEpochMilli(it.endedAt).atZone(zone).toLocalDate() == selected
-            },
-            dailyFocusSeconds = daily?.focusSeconds ?: 0L,
-            dailyCheckIns = daily?.checkIns ?: 0,
+            avgDailySeconds = if (data.totalFocusSeconds <= 0) 0L else data.totalFocusSeconds / focusDays,
+            dailyFocusCount = inRange.count { it.attributedLocalDate(zone) == selected },
+            dailyFocusSeconds = (daily?.focusSeconds ?: 0L).coerceAtLeast(0L),
+            dailyCheckIns = (daily?.checkIns ?: 0).coerceAtLeast(0),
             slices = colored,
             month = month,
             bars = monthDays,
-            barMaxSeconds = (monthDays.maxOfOrNull { it.seconds } ?: 0L).coerceAtLeast(1L),
+            barMaxSeconds = barMax,
+            hasFocusData = total > 0 && colored.isNotEmpty(),
         )
-    }
-
-    fun makeup(taskId: String, date: LocalDate) {
-        val data = (ui.value as? StatsUiState.Content)?.data ?: return
-        val habit = data.habits.firstOrNull { it.task.id == taskId } ?: return
-        if (!HabitSchedule.isScheduled(habit.rule, date)) {
-            messages.tryEmit("该日期不在排期中")
-            return
-        }
-        viewModelScope.launch {
-            when (val result = checkIn.makeup(habit.task, habit.rule, date)) {
-                is CheckInResult.Checked -> messages.emit("补卡成功 · 当前连续 ${result.streak} 天")
-                is CheckInResult.Rejected -> messages.emit(result.reason)
-                is CheckInResult.Undone -> messages.emit(result.message)
-            }
-        }
     }
 }

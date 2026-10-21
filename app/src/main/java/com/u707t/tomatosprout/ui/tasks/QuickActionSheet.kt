@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -117,7 +118,7 @@ fun QuickActionSheet(
                         Column(Modifier.weight(1f).padding(start = 10.dp)) {
                             Text(state.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                             Text(
-                                "长按面板 · 仅保留必要操作",
+                                "长按面板 · 删除后历史记录保留",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -154,19 +155,27 @@ fun QuickActionSheet(
                         val labels = listOf("一", "二", "三", "四", "五", "六", "日")
                         val max = state.weekMinutes.maxOrNull()?.coerceAtLeast(1) ?: 1
                         state.weekMinutes.forEachIndexed { index, minutes ->
-                            val level = if (minutes <= 0) 0f else (0.28f + 0.72f * (minutes.toFloat() / max))
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(
-                                    Modifier.size(22.dp).clip(CircleShape)
-                                        .background(if (level == 0f) MaterialTheme.colorScheme.surfaceVariant else Tomato.copy(alpha = level)),
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(labels.getOrElse(index) { "" }, style = MaterialTheme.typography.labelSmall)
-                                Text(
-                                    if (minutes > 0) "${minutes}分" else "·",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                            key(index) {
+                                val level = if (minutes <= 0) 0f else (0.28f + 0.72f * (minutes.toFloat() / max))
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(
+                                        Modifier.size(22.dp).clip(CircleShape)
+                                            .background(
+                                                if (level == 0f) {
+                                                    MaterialTheme.colorScheme.surfaceVariant
+                                                } else {
+                                                    Tomato.copy(alpha = level)
+                                                },
+                                            ),
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(labels.getOrElse(index) { "" }, style = MaterialTheme.typography.labelSmall)
+                                    Text(
+                                        if (minutes > 0) "${minutes}分" else "·",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }

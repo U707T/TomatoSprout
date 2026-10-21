@@ -115,18 +115,28 @@ object TimerEngine {
 }
 
 /**
- * 归属日期：默认取开始当天；开启「午夜归属」且开始时间在 00:00–03:59 时归到前一天。
- * 这样凌晨 00:20 开始的专注会记在昨晚的打卡上。
+ * 专注归属日期（v1.6）：
+ * - 默认按「结束时刻」所在的本地日期归属，跨午夜时自然落到第二天；
+ * - 开启 midnightMode（界面上的「午夜模式」）后，强制按「开始时刻」所在日期归属，
+ *   这样 23:50 开始、次日 00:20 结束的专注仍然记在开始那天。
+ *
+ * 注意：只比较日期，不再使用「凌晨 0–4 点」的旧规则。
  */
 object SessionAttribution {
-    fun dateOf(startedAtEpoch: Long, midnightShift: Boolean, zone: ZoneId): LocalDate {
-        val start = Instant.ofEpochMilli(startedAtEpoch).atZone(zone)
-        val date = start.toLocalDate()
-        return if (midnightShift && start.hour < 4) date.minusDays(1) else date
-    }
+    fun startDate(startedAtEpoch: Long, zone: ZoneId): LocalDate =
+        Instant.ofEpochMilli(startedAtEpoch).atZone(zone).toLocalDate()
 
-    fun isShifted(startedAtEpoch: Long, midnightShift: Boolean, zone: ZoneId): Boolean {
-        if (!midnightShift) return false
-        return Instant.ofEpochMilli(startedAtEpoch).atZone(zone).hour < 4
-    }
+    fun endDate(endedAtEpoch: Long, zone: ZoneId): LocalDate =
+        Instant.ofEpochMilli(endedAtEpoch).atZone(zone).toLocalDate()
+
+    fun dateOf(
+        startedAtEpoch: Long,
+        endedAtEpoch: Long,
+        midnightMode: Boolean,
+        zone: ZoneId,
+    ): LocalDate = if (midnightMode) startDate(startedAtEpoch, zone) else endDate(endedAtEpoch, zone)
+
+    /** 是否真的跨了午夜（与设置无关），用于历史记录上的「跨天」标记。 */
+    fun isShifted(startedAtEpoch: Long, endedAtEpoch: Long, zone: ZoneId): Boolean =
+        startDate(startedAtEpoch, zone) != endDate(endedAtEpoch, zone)
 }

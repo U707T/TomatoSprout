@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TaskDao {
-    @Query("SELECT * FROM tasks WHERE deletedAt IS NULL AND status != 'ARCHIVED' AND parentId IS NULL ORDER BY sortOrder ASC, priority ASC, createdAt ASC")
+    @Query("SELECT * FROM tasks WHERE deletedAt IS NULL AND parentId IS NULL ORDER BY sortOrder ASC, priority ASC, createdAt ASC")
     fun observeActive(): Flow<List<TaskEntity>>
 
     @Query("SELECT * FROM tasks ORDER BY createdAt ASC, id ASC")

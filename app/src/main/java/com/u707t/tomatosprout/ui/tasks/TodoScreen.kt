@@ -1,5 +1,6 @@
 package com.u707t.tomatosprout.ui.tasks
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -20,7 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,10 +58,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.domain.Task
 import com.u707t.tomatosprout.domain.TaskStatus
+import com.u707t.tomatosprout.domain.TaskType
 import com.u707t.tomatosprout.ui.components.ConfirmDialog
 import com.u707t.tomatosprout.ui.components.EmptyState
 import com.u707t.tomatosprout.ui.theme.Tomato
-import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,9 +70,8 @@ fun TodoScreen(
     onStartTask: (Task) -> Unit,
     onEditTask: (String) -> Unit,
     onAdvancedAdd: (QuickAddUiState) -> Unit,
-    onOpenArchive: () -> Unit,
-    onOpenHistory: (String) -> Unit,
-    onOpenStats: (String) -> Unit,
+    onOpenHistory: (taskId: String?) -> Unit,
+    onOpenStats: (taskId: String?) -> Unit,
     viewModel: TodoViewModel = hiltViewModel(),
     quickAddViewModel: QuickAddViewModel = hiltViewModel(),
 ) {
@@ -80,12 +80,17 @@ fun TodoScreen(
     val snackbar = remember { SnackbarHostState() }
     var showAdd by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Task?>(null) }
+    var finalDelete by remember { mutableStateOf<Task?>(null) }
+    var pendingUndo by remember { mutableStateOf<Task?>(null) }
 
     LaunchedEffect(Unit) {
         quickAddViewModel.created.collect { task ->
             showAdd = false
             snackbar.showSnackbar("已创建「${task.title}」")
         }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.messages.collect { snackbar.showSnackbar(it) }
     }
 
     Scaffold(
@@ -95,15 +100,15 @@ fun TodoScreen(
                     Column {
                         Text("任务")
                         Text(
-                            LocalDate.now().format(DateTimeFormatter.ofPattern("M 月 d 日")),
+                            ui.today.format(DateTimeFormatter.ofPattern("M 月 d 日")),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 },
                 actions = {
-                    TextButton(onClick = onOpenArchive) {
-                        Text(if (ui.archivedCount > 0) "归档 ${ui.archivedCount}" else "归档")
+                    IconButton(onClick = { onOpenHistory(null) }) {
+                        Icon(Icons.Default.DateRange, contentDescription = "历史时间轴")
                     }
                     IconButton(onClick = {
                         quickAddViewModel.reset()
@@ -122,7 +127,7 @@ fun TodoScreen(
                 },
                 containerColor = Tomato,
                 contentColor = Color.White,
-                modifier = Modifier.padding(bottom = 64.dp),
+                modifier = Modifier.padding(bottom = 72.dp),
             ) { Icon(Icons.Default.Add, contentDescription = "新建任务") }
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -132,15 +137,13 @@ fun TodoScreen(
                 CircularProgressIndicator()
             }
             ui.error != null -> Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(ui.error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                }
+                Text(ui.error.orEmpty(), color = MaterialTheme.colorScheme.error)
             }
             ui.cards.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
                 EmptyState(
-                    emoji = "🗂",
-                    title = "还没有任务",
-                    message = "用一句话记下想做的事，再决定用番茄钟还是正向计时。",
+                    emoji = "🍅",
+                    title = "今天想先做哪件事？",
+                    message = "用一句话记下想做的事，再决定用番茄钟、正向计时，还是直接打卡。",
                     actionLabel = "快捷添加",
                     onAction = {
                         quickAddViewModel.reset()
@@ -150,15 +153,19 @@ fun TodoScreen(
             }
             else -> LazyColumn(
                 Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(16.dp, 4.dp, 16.dp, 100.dp),
+                contentPadding = PaddingValues(16.dp, 4.dp, 16.dp, 120.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item {
-                    Text(
-                        "共 ${ui.cards.size} 个任务 · 长按卡片打开快捷面板",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                item(key = "summary") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "共 ${ui.cards.size} 个任务 · 长按卡片打开快捷面板",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { onOpenHistory(null) }) { Text("历史 ›") }
+                    }
                 }
                 items(ui.cards, key = { it.task.id }) { card ->
                     TodoBigCard(
@@ -166,6 +173,13 @@ fun TodoScreen(
                         onStart = { onStartTask(card.task) },
                         onEdit = { onEditTask(card.task.id) },
                         onLongPress = { viewModel.showQuickActions(card.task.id) },
+                        onCheckIn = {
+                            if (card.checkedToday) {
+                                pendingUndo = card.task
+                            } else {
+                                viewModel.toggleCheckIn(card.task)
+                            }
+                        },
                         onToggleDone = {
                             viewModel.markDone(card.task, card.task.status != TaskStatus.DONE)
                         },
@@ -213,6 +227,7 @@ fun TodoScreen(
             onMoveUp = { viewModel.move(quick.taskId, -1) },
             onMoveDown = { viewModel.move(quick.taskId, 1) },
             onDelete = {
+                viewModel.dismissQuickActions()
                 pendingDelete = ui.cards.firstOrNull { it.task.id == quick.taskId }?.task
             },
             onHistory = {
@@ -229,13 +244,39 @@ fun TodoScreen(
     pendingDelete?.let { task ->
         ConfirmDialog(
             title = "删除「${task.title}」？",
-            message = "任务会从列表隐藏，历史专注记录仍会保留。",
-            confirmLabel = "删除",
+            message = "任务会从首页移除。已有的打卡与专注记录会保留，在历史页显示为「[已删除] ${task.title}」，统计不受影响。",
+            confirmLabel = "继续删除",
             onConfirm = {
-                viewModel.delete(task)
                 pendingDelete = null
+                finalDelete = task
             },
             onDismiss = { pendingDelete = null },
+        )
+    }
+
+    finalDelete?.let { task ->
+        ConfirmDialog(
+            title = "最后确认",
+            message = "删除后无法恢复这个任务；历史记录不会丢失。",
+            confirmLabel = "确认删除",
+            onConfirm = {
+                viewModel.delete(task)
+                finalDelete = null
+            },
+            onDismiss = { finalDelete = null },
+        )
+    }
+
+    pendingUndo?.let { task ->
+        ConfirmDialog(
+            title = "撤销今天的打卡？",
+            message = "会撤销「${task.title}」今天的全部打卡次数，连续天数可能随之变化。",
+            confirmLabel = "撤销打卡",
+            onConfirm = {
+                viewModel.toggleCheckIn(task)
+                pendingUndo = null
+            },
+            onDismiss = { pendingUndo = null },
         )
     }
 }
@@ -247,10 +288,11 @@ private fun TodoBigCard(
     onStart: () -> Unit,
     onEdit: () -> Unit,
     onLongPress: () -> Unit,
+    onCheckIn: () -> Unit,
     onToggleDone: () -> Unit,
 ) {
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-    val cardHeight = (screenHeight / 6).coerceAtLeast(132.dp)
+    val cardHeight = (screenHeight / 6).coerceAtLeast(142.dp)
     val raw = runCatching { Color(card.task.color.toInt()) }.getOrDefault(Tomato)
     val base = lerp(raw, Color(0xFF6E625D), 0.16f)
     val done = card.task.status == TaskStatus.DONE
@@ -282,26 +324,29 @@ private fun TodoBigCard(
         Column(Modifier.fillMaxSize().padding(18.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        card.task.title,
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text((card.task.icon ?: "🍅") + " ", fontSize = 18.sp, color = Color.White)
+                        Text(
+                            card.task.title,
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                    }
                     val progressLabel = when {
                         card.subtaskTotal > 0 -> "子任务 ${card.subtaskDone}/${card.subtaskTotal}"
                         card.goal != null -> {
                             val goal = card.goal
                             if (goal.unit == "小时") {
-                                val usedH = goal.used / 3600
-                                val targetH = (goal.target ?: 0) / 3600
-                                "目标 ${usedH}/${targetH} 小时"
+                                "目标 ${goal.used / 3600}/${(goal.target ?: 0) / 3600} 小时"
                             } else {
                                 "目标 ${percentLabel(goal.used, goal.target)} 次"
                             }
                         }
+                        card.isHabit && card.streak > 0 -> "连续 ${card.streak} 天"
                         else -> null
                     }
                     if (progressLabel != null) {
@@ -312,12 +357,12 @@ private fun TodoBigCard(
                         )
                     }
                 }
-                if (card.task.type == com.u707t.tomatosprout.domain.TaskType.TODO && card.subtaskTotal == 0) {
+                if (card.task.type == TaskType.TODO && card.subtaskTotal == 0) {
                     Surface(
                         onClick = onToggleDone,
                         shape = CircleShape,
                         color = Color.White.copy(alpha = 0.16f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.45f)),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.45f)),
                         modifier = Modifier.size(32.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -331,31 +376,81 @@ private fun TodoBigCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        if (done) "已完成" else card.timerLabel,
-                        color = Color.White.copy(alpha = 0.9f),
+                        when {
+                            done -> "已完成"
+                            card.isHabit && card.checkedToday ->
+                                "今日已打卡 ${card.todayCheckInCount}/${card.habitTarget}"
+                            card.isHabit && card.partiallyChecked ->
+                                "今日打卡 ${card.todayCheckInCount}/${card.habitTarget} · 还差 " +
+                                    "${(card.habitTarget - card.todayCheckInCount).coerceAtLeast(1)} 次"
+                            card.isHabit -> "今日待打卡"
+                            card.todayFocusCount > 0 -> "今日专注 ${card.todayFocusCount} 次"
+                            else -> card.timerLabel
+                        },
+                        color = Color.White.copy(alpha = 0.92f),
                         style = MaterialTheme.typography.labelLarge,
                     )
                     Text(
-                        "今日已专注 ${card.todayFocusCount} 次",
+                        "今日 ${card.todayFocusMinutes} 分钟 · 累计 ${formatDuration(card.totalFocusSeconds)}",
                         color = Color.White.copy(alpha = 0.72f),
                         style = MaterialTheme.typography.labelSmall,
                     )
                 }
-                Surface(
-                    onClick = { if (!done) onStart() },
-                    enabled = !done,
-                    shape = CircleShape,
-                    color = Color.White.copy(alpha = if (done) 0.08f else 0.20f),
-                    border = androidx.compose.foundation.BorderStroke(1.2.dp, Color.White.copy(alpha = 0.55f)),
-                    modifier = Modifier.size(62.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            if (done) "完成" else "开始",
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp,
-                        )
+                if (card.isHabit) {
+                    Surface(
+                        onClick = onCheckIn,
+                        shape = RoundedCornerShape(18.dp),
+                        color = if (card.checkedToday) {
+                            Color.White.copy(alpha = 0.18f)
+                        } else {
+                            Color.White.copy(alpha = 0.94f)
+                        },
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.55f)),
+                        modifier = Modifier.height(40.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp)) {
+                            Text(
+                                when {
+                                    card.checkedToday -> "已打卡"
+                                    card.partiallyChecked -> "继续打卡"
+                                    else -> "打卡"
+                                },
+                                color = if (card.checkedToday) Color.White else Tomato,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.size(8.dp))
+                }
+                if (!done && card.canFocus) {
+                    Surface(
+                        onClick = onStart,
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.20f),
+                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.55f)),
+                        modifier = Modifier.size(56.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                if (card.isHabit) "专注" else "开始",
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = if (card.isHabit) 13.sp else 15.sp,
+                            )
+                        }
+                    }
+                } else if (done) {
+                    Surface(
+                        onClick = onToggleDone,
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                        modifier = Modifier.height(40.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp)) {
+                            Text("重新打开", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp)
+                        }
                     }
                 }
             }

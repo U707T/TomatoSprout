@@ -1,10 +1,17 @@
 package com.u707t.tomatosprout.domain
 
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
 enum class TaskType { HABIT, POMODORO, GOAL, TODO }
-enum class TaskStatus { TODO, DONE, ARCHIVED }
+
+/**
+ * v1.6 起不再有 ARCHIVED：任务只有「进行中 / 已完成」两种状态。
+ * 删除是独立维度（Task.deletedAt 软删除），历史打卡与专注记录继续保留。
+ * 旧数据库/旧备份中的 "ARCHIVED" 会在 Migration 与 Mapper 中转换为删除或 TODO。
+ */
+enum class TaskStatus { TODO, DONE }
 enum class Frequency { DAILY, WEEKDAYS, WEEKLY, CUSTOM }
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
@@ -85,7 +92,15 @@ data class FocusSession(
     val interruptionCount: Int = 0,
     val note: String? = null,
     val deletedAt: Long? = null,
-)
+    /** completed / interrupted；v1.6 新增，旧数据为空按 completed 处理。 */
+    val outcome: String? = null,
+    /** 归属日期（跨午夜时按设置取开始日或结束日），用于统计与时间轴。 */
+    val attributedDate: LocalDate? = null,
+    /** 由本次专注自动写入的打卡 id，便于回溯。 */
+    val checkInId: String? = null,
+) {
+    val completed: Boolean get() = outcome != "interrupted" && actualSeconds > 0
+}
 
 data class ReminderRule(
     val id: String,
@@ -144,7 +159,8 @@ object SystemAppClock : AppClock {
     override fun zone(): ZoneId = ZoneId.systemDefault()
 }
 
-fun AppClock.today(): LocalDate = LocalDate.now(zone())
+fun AppClock.today(): LocalDate =
+    Instant.ofEpochMilli(nowMillis()).atZone(zone()).toLocalDate()
 
 /** 同步/导入结果里只需要一个轻量冲突信息。 */
 data class MergeReport(

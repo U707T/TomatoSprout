@@ -29,7 +29,16 @@ class QuickAddViewModel @Inject constructor(
 
     fun reset() = _state.update { QuickAddUiState() }
     fun setTitle(value: String) = _state.update { it.copy(title = value.take(60), error = null) }
-    fun setType(value: QuickTaskType) = _state.update { it.copy(type = value) }
+    fun setType(value: QuickTaskType) = _state.update {
+        it.copy(
+            type = value,
+            timer = when {
+                value == QuickTaskType.TODO -> QuickTimerMode.NONE
+                it.timer == QuickTimerMode.NONE -> QuickTimerMode.COUNTDOWN
+                else -> it.timer
+            },
+        )
+    }
     fun setTimer(value: QuickTimerMode) = _state.update { it.copy(timer = value) }
     fun setDuration(value: Int) = _state.update {
         it.copy(durationMinutes = value.coerceIn(5, 180))
@@ -57,11 +66,13 @@ class QuickAddViewModel @Inject constructor(
                     QuickTaskType.POMODORO -> 0xFFFF6B6B
                     QuickTaskType.GOAL -> 0xFF8FAE83
                     QuickTaskType.HABIT -> 0xFF8C9ED6
+                    QuickTaskType.TODO -> 0xFF7FB5B5
                 },
                 icon = when (s.type) {
                     QuickTaskType.POMODORO -> "🍅"
                     QuickTaskType.GOAL -> "🎯"
                     QuickTaskType.HABIT -> "🌱"
+                    QuickTaskType.TODO -> "📝"
                 },
                 priority = 1,
                 createdAt = now,

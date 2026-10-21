@@ -14,27 +14,31 @@ import com.u707t.tomatosprout.domain.TaskType
 import com.u707t.tomatosprout.domain.WishItem
 import java.time.LocalDate
 
-fun TaskEntity.toDomain() = Task(
-    id = id,
-    type = runCatching { TaskType.valueOf(type) }.getOrDefault(TaskType.TODO),
-    title = title,
-    note = note,
-    color = color,
-    icon = icon,
-    priority = priority,
-    dueAt = dueAt,
-    repeatRule = repeatRule,
-    estimatedPomos = estimatedPomos,
-    completedPomos = completedPomos,
-    status = runCatching { TaskStatus.valueOf(status) }.getOrDefault(TaskStatus.TODO),
-    createdAt = createdAt,
-    updatedAt = updatedAt,
-    deletedAt = deletedAt,
-    parentId = parentId,
-    sortOrder = sortOrder,
-    timerMode = timerMode ?: "countdown",
-    focusMinutes = focusMinutes ?: 25,
-)
+fun TaskEntity.toDomain(): Task {
+    // 旧备份/旧数据里的 ARCHIVED 不是合法 TaskStatus：按「用户原本想隐藏它」处理为软删除
+    val legacyArchived = status == "ARCHIVED"
+    return Task(
+        id = id,
+        type = runCatching { TaskType.valueOf(type) }.getOrDefault(TaskType.TODO),
+        title = title,
+        note = note,
+        color = color,
+        icon = icon,
+        priority = priority,
+        dueAt = dueAt,
+        repeatRule = repeatRule,
+        estimatedPomos = estimatedPomos,
+        completedPomos = completedPomos,
+        status = runCatching { TaskStatus.valueOf(status) }.getOrDefault(TaskStatus.TODO),
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        deletedAt = deletedAt ?: if (legacyArchived) updatedAt.coerceAtLeast(1L) else null,
+        parentId = parentId,
+        sortOrder = sortOrder,
+        timerMode = timerMode ?: "countdown",
+        focusMinutes = focusMinutes ?: 25,
+    )
+}
 
 fun Task.toEntity() = TaskEntity(
     id = id,
@@ -136,6 +140,9 @@ fun FocusSessionEntity.toDomain() = FocusSession(
     interruptionCount = interruptionCount,
     note = note,
     deletedAt = deletedAt,
+    outcome = outcome,
+    attributedDate = attributedDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+    checkInId = checkInId,
 )
 
 fun FocusSession.toEntity() = FocusSessionEntity(
@@ -150,6 +157,9 @@ fun FocusSession.toEntity() = FocusSessionEntity(
     interruptionCount = interruptionCount,
     note = note,
     deletedAt = deletedAt,
+    outcome = outcome,
+    attributedDate = attributedDate?.toString(),
+    checkInId = checkInId,
 )
 
 fun ReminderRuleEntity.toDomain() = ReminderRule(id, taskId, timeOfDay, weekdaysMask, enabled)

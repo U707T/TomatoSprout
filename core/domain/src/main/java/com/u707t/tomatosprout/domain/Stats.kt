@@ -31,6 +31,21 @@ data class GoalProgress(
 
 enum class HeatmapMetric { CHECK_INS, FOCUS_DURATION }
 
+/** 专注归属日期：优先使用落库时算好的 attributedDate，旧数据回退到结束时间。 */
+fun FocusSession.attributedLocalDate(zone: ZoneId): LocalDate =
+    attributedDate ?: Instant.ofEpochMilli(endedAt).atZone(zone).toLocalDate()
+
+/** 统一处理「孤儿数据」的展示名：任务已删除或查不到时保留原始名称并置灰。 */
+object TaskDisplay {
+    fun isDeleted(task: Task?): Boolean = task == null || task.deletedAt != null
+
+    fun title(task: Task?, fallback: String = "原任务"): String = when {
+        task == null -> "[已删除] $fallback"
+        task.deletedAt != null -> "[已删除] ${task.title}"
+        else -> task.title
+    }
+}
+
 data class HeatmapData(val metric: HeatmapMetric, val values: Map<LocalDate, Long>)
 
 data class TimelineItem(
@@ -42,6 +57,8 @@ data class TimelineItem(
     val kind: String,
     val detail: String,
     val taskId: String?,
+    /** 任务已删除时标题以「[已删除]」开头，UI 置灰且不可点击。 */
+    val taskDeleted: Boolean = false,
 )
 
 data class StatsData(
@@ -80,9 +97,11 @@ object StatsCalculator {
         zone: ZoneId,
     ): StatsData {
         val activeChecks = checkIns.filter { it.deletedAt == null }
-        val activeFocus = focusSessions.filter { it.deletedAt == null }
+        // 防脏数据：时长 < 0 或结束时间非法的一律不参与统计与绘图
+        val activeFocus = focusSessions.filter {
+            it.deletedAt == null && it.actualSeconds >= 0 && it.endedAt > 0L
+        }
         val taskById = tasks.associateBy { it.id }
-        val rulesByTask = habitRules.associateBy { it.taskId }
 
         val habits = habitRules.mapNotNull { rule ->
             val task = taskById[rule.taskId] ?: return@mapNotNull null
@@ -104,11 +123,11 @@ object StatsCalculator {
             dayMap[check.date] = current.copy(checkIns = current.checkIns + max(1, check.count))
         }
         activeFocus.forEach { session ->
-            val date = Instant.ofEpochMilli(session.endedAt).atZone(zone).toLocalDate()
+            val date = session.attributedLocalDate(zone)
             val current = dayMap[date] ?: DayAggregate(date)
             dayMap[date] = current.copy(
                 focusSeconds = current.focusSeconds + session.actualSeconds,
-                pomos = current.pomos + if (session.mode == "pomodoro") 1 else 0,
+                pomos = current.pomos + if (session.mode == "pomodoro" && session.completed) 1 else 0,
             )
         }
 
@@ -120,7 +139,7 @@ object StatsCalculator {
             }.sumOf { max(1, it.count).toLong() }
             val seconds = activeFocus.filter {
                 it.taskId == goal.taskId &&
-                    Instant.ofEpochMilli(it.endedAt).atZone(zone).toLocalDate().let { d -> !d.isBefore(goal.startDate) && !d.isAfter(goal.endDate) }
+                    it.attributedLocalDate(zone).let { d -> !d.isBefore(goal.startDate) && !d.isAfter(goal.endDate) }
             }.sumOf { it.actualSeconds.toLong() }
             goal.taskId to if (goal.targetTotalSeconds != null) {
                 GoalProgress(used = seconds, target = goal.targetTotalSeconds, unit = "小时")
@@ -138,12 +157,13 @@ object StatsCalculator {
             totalCheckIns = activeChecks.sumOf { max(1, it.count) },
             checkInDays = activeChecks.map { it.date }.distinct().size,
             totalFocusSeconds = activeFocus.sumOf { it.actualSeconds.toLong() },
-            totalPomos = activeFocus.count { it.mode == "pomodoro" },
+            totalPomos = activeFocus.count { it.mode == "pomodoro" && it.completed },
             perfectDays = perfectDays,
             timeline = timeline,
             badges = badges,
             checks = activeChecks,
-            tasks = tasks.filter { it.deletedAt == null }.sortedBy { it.createdAt },
+            // 保留已删除任务，历史记录才能显示「[已删除] 原任务名」
+            tasks = tasks.sortedBy { it.createdAt },
             sessions = activeFocus,
             goalProgress = goalProgress,
         )
@@ -173,36 +193,46 @@ object StatsCalculator {
     ): List<TimelineItem> {
         val items = ArrayList<TimelineItem>(checks.size + focus.size)
         checks.forEach { check ->
-            val title = tasks[check.taskId]?.title ?: "已删除的习惯"
+            val task = tasks[check.taskId]
             val at = check.createdAt
             items += TimelineItem(
                 id = "check-${check.id}",
                 atMillis = at,
                 date = check.date,
                 timeLabel = Instant.ofEpochMilli(at).atZone(zone).format(timeFmt),
-                title = title,
+                title = TaskDisplay.title(task, fallback = "习惯"),
                 kind = "checkin",
                 detail = when {
                     check.isMakeup -> "补卡"
                     check.count > 1 -> "打卡 ×${check.count}"
                     else -> "打卡"
                 },
-                taskId = check.taskId,
+                // 任务删除后不再可点击跳转
+                taskId = check.taskId.takeIf { task != null && task.deletedAt == null },
+                taskDeleted = TaskDisplay.isDeleted(task),
             )
         }
         focus.forEach { session ->
-            val title = session.taskId?.let { tasks[it]?.title } ?: "自由专注"
+            val task = session.taskId?.let { tasks[it] }
+            val title = when {
+                session.taskId == null -> "自由专注"
+                else -> TaskDisplay.title(task, fallback = "原任务")
+            }
             val at = session.endedAt
             val minutes = max(1, session.actualSeconds / 60)
             items += TimelineItem(
                 id = "focus-${session.id}",
                 atMillis = at,
-                date = Instant.ofEpochMilli(at).atZone(zone).toLocalDate(),
+                date = session.attributedLocalDate(zone),
                 timeLabel = Instant.ofEpochMilli(at).atZone(zone).format(timeFmt),
                 title = title,
                 kind = "focus",
-                detail = "专注 $minutes 分钟" + if (session.isMidnightShifted) " · 归属前一天" else "",
-                taskId = session.taskId,
+                detail = buildString {
+                    append(if (session.completed) "专注 $minutes 分钟" else "中断 · $minutes 分钟")
+                    if (session.isMidnightShifted) append(" · 跨天归属")
+                },
+                taskId = session.taskId.takeIf { task?.deletedAt == null },
+                taskDeleted = session.taskId != null && TaskDisplay.isDeleted(task),
             )
         }
         return items.sortedByDescending { it.atMillis }.take(500)

@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -52,12 +53,13 @@ val chartPalette = listOf(
 )
 
 fun formatChartDuration(seconds: Long): String {
-    val h = seconds / 3600
-    val m = (seconds % 3600) / 60
+    val safe = seconds.coerceAtLeast(0)
+    val h = safe / 3600
+    val m = (safe % 3600) / 60
     return when {
         h > 0 -> "${h}小时${m}分"
         m > 0 -> "${m}分钟"
-        else -> "${seconds}秒"
+        else -> "${safe}秒"
     }
 }
 
@@ -103,19 +105,20 @@ fun DayOverviewCard(
 fun DistributionCard(
     dashboard: StatsDashboard,
     onRange: (DistributionRange) -> Unit,
-    onCustom: () -> Unit,
     onViewRecords: () -> Unit,
 ) {
     SoftCard {
         Text("时长分布", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            DistributionRange.entries.forEach { range ->
-                FilterChip(
-                    selected = dashboard.range == range,
-                    onClick = { if (range == DistributionRange.CUSTOM) onCustom() else onRange(range) },
-                    label = { Text(range.label) },
-                )
+            listOf(DistributionRange.DAY, DistributionRange.WEEK, DistributionRange.MONTH).forEach { range ->
+                key(range) {
+                    FilterChip(
+                        selected = dashboard.range == range,
+                        onClick = { onRange(range) },
+                        label = { Text(range.label) },
+                    )
+                }
             }
         }
         if (dashboard.range == DistributionRange.CUSTOM) {
@@ -130,9 +133,9 @@ fun DistributionCard(
             DonutChart(dashboard.slices, dashboard.totalSeconds)
         }
         Spacer(Modifier.height(8.dp))
-        if (dashboard.slices.isEmpty()) {
+        if (dashboard.slices.isEmpty() || dashboard.totalSeconds <= 0) {
             Text(
-                "这个区间还没有专注记录。",
+                "暂无专注数据",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(),
@@ -140,25 +143,39 @@ fun DistributionCard(
             )
         } else {
             dashboard.slices.forEach { slice ->
-                val percent = if (dashboard.totalSeconds <= 0) 0 else (slice.seconds * 100 / dashboard.totalSeconds).toInt()
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
-                    Box(
-                        Modifier.size(9.dp).background(
-                            chartPalette[slice.colorIndex % chartPalette.size],
-                            CircleShape,
-                        ),
-                    )
-                    Text(
-                        slice.label,
-                        modifier = Modifier.weight(1f).padding(start = 8.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                    )
-                    Text(
-                        "$percent% · ${formatChartDuration(slice.seconds)}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                key("${slice.colorIndex}-${slice.label}") {
+                    val percent = if (dashboard.totalSeconds <= 0) {
+                        0
+                    } else {
+                        (slice.seconds * 100 / dashboard.totalSeconds).toInt()
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(vertical = 3.dp),
+                    ) {
+                        Box(
+                            Modifier.size(9.dp).background(
+                                chartPalette[slice.colorIndex.mod(chartPalette.size)],
+                                CircleShape,
+                            ),
+                        )
+                        Text(
+                            slice.label,
+                            modifier = Modifier.weight(1f).padding(start = 8.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (slice.taskDeleted) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            maxLines = 1,
+                        )
+                        Text(
+                            "$percent% · ${formatChartDuration(slice.seconds)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
@@ -170,9 +187,12 @@ fun DistributionCard(
 
 @Composable
 fun DonutChart(slices: List<ChartSlice>, totalSeconds: Long) {
+    val hasData = slices.isNotEmpty() && totalSeconds > 0
     Box(Modifier.size(190.dp), contentAlignment = Alignment.Center) {
         val track = MaterialTheme.colorScheme.surfaceVariant
         Canvas(Modifier.matchParentSize()) {
+            // 空数据直接返回，绝不执行除 0 / 非法弧度运算
+            if (!hasData) return@Canvas
             val stroke = 26.dp.toPx()
             val inset = stroke / 2
             drawArc(
@@ -184,10 +204,10 @@ fun DonutChart(slices: List<ChartSlice>, totalSeconds: Long) {
             )
             var angle = -90f
             slices.forEach { slice ->
-                if (totalSeconds <= 0 || slice.seconds <= 0) return@forEach
-                val sweep = 360f * slice.seconds.toFloat() / totalSeconds
+                if (slice.seconds <= 0) return@forEach
+                val sweep = 360f * slice.seconds.toFloat() / totalSeconds.toFloat()
                 drawArc(
-                    color = chartPalette[slice.colorIndex % chartPalette.size],
+                    color = chartPalette[slice.colorIndex.mod(chartPalette.size)],
                     startAngle = angle + 1.5f,
                     sweepAngle = (sweep - 3f).coerceAtLeast(1f),
                     useCenter = false,
@@ -199,12 +219,25 @@ fun DonutChart(slices: List<ChartSlice>, totalSeconds: Long) {
             }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                formatChartDuration(totalSeconds),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            Text("总时长", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (hasData) {
+                Text(
+                    formatChartDuration(totalSeconds),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "总时长",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    "暂无\n专注数据",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -226,25 +259,47 @@ fun MonthlyBarChart(dashboard: StatsDashboard, onBarClick: (Int) -> Unit) {
             Text("点击柱子查看当天", style = MaterialTheme.typography.labelSmall, color = textColor)
         }
         Spacer(Modifier.height(6.dp))
+        if (dashboard.bars.isEmpty()) {
+            Box(
+                Modifier.fillMaxWidth().height(190.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "暂无专注数据",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            return@Column
+        }
+        val maxVal = dashboard.bars.maxOfOrNull { it.seconds }?.coerceAtLeast(1L) ?: 1L
         Canvas(
             Modifier
                 .fillMaxWidth()
                 .height(190.dp)
                 .pointerInput(dashboard.month, dashboard.bars) {
                     detectTapGestures { offset ->
+                        val bars = dashboard.bars
+                        if (bars.isEmpty()) return@detectTapGestures
                         val left = 6.dp.toPx()
                         val usable = size.width - left * 2
-                        val slot = usable / dashboard.bars.size
+                        if (usable <= 0f) return@detectTapGestures
+                        val slot = usable / bars.size
                         val index = ((offset.x - left) / slot).toInt()
-                        dashboard.bars.getOrNull(index)?.let { onBarClick(it.day) }
+                        bars.getOrNull(index)?.let { onBarClick(it.day) }
                     }
                 },
         ) {
+            val bars = dashboard.bars
+            // Canvas 内再判空，防止重组间隙传入空列表
+            if (bars.isEmpty()) return@Canvas
             val left = 6.dp.toPx()
             val top = 18.dp.toPx()
             val bottom = size.height - 22.dp.toPx()
-            val usableHeight = bottom - top
-            val slot = (size.width - left * 2) / dashboard.bars.size
+            val usableHeight = (bottom - top).coerceAtLeast(1f)
+            val slot = (size.width - left * 2) / bars.size
+            if (slot <= 0f) return@Canvas
+            val safeMax = maxVal.coerceAtLeast(1L)
             val barWidth = (slot * 0.58f).coerceAtLeast(2.dp.toPx())
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 textSize = with(density) { 7.sp.toPx() }
@@ -252,8 +307,8 @@ fun MonthlyBarChart(dashboard: StatsDashboard, onBarClick: (Int) -> Unit) {
                 color = textColor.toArgb()
             }
             drawLine(gridColor, Offset(left, bottom), Offset(size.width - left, bottom), 1f)
-            dashboard.bars.forEachIndexed { index, bar ->
-                val ratio = bar.seconds.toFloat() / dashboard.barMaxSeconds
+            bars.forEachIndexed { index, bar ->
+                val ratio = (bar.seconds.coerceAtLeast(0L).toFloat() / safeMax.toFloat()).coerceIn(0f, 1f)
                 val h = (usableHeight * ratio).coerceAtLeast(if (bar.seconds > 0) 3.dp.toPx() else 0f)
                 val x = left + slot * index + (slot - barWidth) / 2
                 drawRoundRect(

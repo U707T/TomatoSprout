@@ -9,6 +9,8 @@ import android.os.Build
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,11 +26,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -39,6 +40,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,6 +61,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -70,11 +75,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.u707t.tomatosprout.domain.SessionAttribution
+import com.u707t.tomatosprout.domain.SystemAppClock
 import com.u707t.tomatosprout.domain.TimerEngine
 import com.u707t.tomatosprout.domain.TimerMode
 import com.u707t.tomatosprout.domain.TimerPhase
@@ -92,13 +100,14 @@ private val quotes = listOf(
 @Composable
 fun FocusTimerScreen(
     onExit: () -> Unit,
-    viewModel: FocusViewModel = hiltViewModel(),
+    viewModel: FocusTimerViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val view = LocalView.current
     val activity = context.findActivity()
     val window = activity?.window
+    val snackbar = remember { SnackbarHostState() }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
@@ -109,6 +118,7 @@ fun FocusTimerScreen(
         onDispose { lifecycle.removeObserver(observer) }
     }
 
+    // 退出页面 / 进程回收时恢复系统亮度，并释放屏幕常亮标记
     val originalBrightness = remember { window?.attributes?.screenBrightness ?: -1f }
     DisposableEffect(Unit) {
         onDispose {
@@ -117,15 +127,17 @@ fun FocusTimerScreen(
                 attrs.screenBrightness = originalBrightness
                 window.attributes = attrs
                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                WindowCompat.getInsetsController(window, view).apply {
-                    show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                }
+                WindowCompat.getInsetsController(window, view)
+                    .show(WindowInsetsCompat.Type.systemBars())
             }
         }
     }
     DisposableEffect(ui.keepScreenOn) {
-        if (ui.keepScreenOn) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (ui.keepScreenOn) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
     LaunchedEffect(ui.brightness) {
@@ -139,13 +151,28 @@ fun FocusTimerScreen(
         if (window != null) {
             val controller = WindowCompat.getInsetsController(window, view)
             if (ui.immersive) {
-                controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                controller.hide(WindowInsetsCompat.Type.systemBars())
                 controller.isAppearanceLightStatusBars = false
             } else {
-                controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                controller.show(WindowInsetsCompat.Type.systemBars())
             }
         }
     }
+    LaunchedEffect(ui.error) {
+        ui.error?.let {
+            snackbar.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
+
+    // 进入全屏时淡入，避免导航切换时闪黑
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(260),
+        label = "focusFade",
+    )
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val start = {
@@ -160,10 +187,9 @@ fun FocusTimerScreen(
 
     val timer = ui.timer
     val now = ui.nowMono
-    val task = ui.tasks.firstOrNull { it.id == ui.selectedTaskId }
+    val task = ui.selectedTask
     val base = task?.let { runCatching { Color(it.color.toInt()) }.getOrNull() } ?: Tomato
     val totalSeconds = timer?.plannedSeconds ?: (ui.focusMinutes * 60)
-    val elapsed = timer?.elapsedSeconds(now) ?: 0
     val displaySeconds = when {
         timer == null -> (ui.focusMinutes * 60).toLong()
         timer.mode == TimerMode.COUNTDOWN -> timer.remainingMillis(now) / 1000
@@ -181,6 +207,7 @@ fun FocusTimerScreen(
     Box(
         Modifier
             .fillMaxSize()
+            .graphicsLayer { this.alpha = alpha }
             .background(
                 Brush.verticalGradient(
                     listOf(
@@ -208,7 +235,13 @@ fun FocusTimerScreen(
                         context = context,
                         title = task?.title ?: "自由专注",
                         timeText = TimerEngine.formatClock(displaySeconds),
-                        subtitle = if (timer == null) "准备开始 · ${ui.focusMinutes} 分钟" else if (timer.isBreak) "休息一下" else "专注进行中",
+                        subtitle = if (timer == null) {
+                            "准备开始 · ${ui.focusMinutes} 分钟"
+                        } else if (timer.isBreak) {
+                            "休息一下"
+                        } else {
+                            "专注进行中"
+                        },
                         accent = base,
                     )
                 }
@@ -291,13 +324,27 @@ fun FocusTimerScreen(
                 textAlign = TextAlign.Center,
             )
             Text(
-                String.format("%02d", (task?.completedPomos ?: 0) + 1) + " 进行中" +
+                String.format(java.util.Locale.US, "%02d", (task?.completedPomos ?: 0) + 1) + " 进行中" +
                     if (timer?.strict == true) " · 严格模式" else "",
                 color = Color.White.copy(alpha = 0.55f),
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
+            if (timer?.isBreak == false) {
+                val crossDayNow = timer?.let {
+                    SessionAttribution.isShifted(it.startedAtEpoch, System.currentTimeMillis(), SystemAppClock.zone())
+                } == true
+                if (crossDayNow) {
+                    Text(
+                        if (ui.settings.midnightShift) "已跨天 · 归入开始日" else "已跨天 · 归入结束日",
+                        color = Color.White.copy(alpha = 0.48f),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
 
             if (timer == null) {
                 Spacer(Modifier.height(12.dp))
@@ -327,12 +374,19 @@ fun FocusTimerScreen(
                     }
                     DropdownMenu(expanded = taskMenu, onDismissRequest = { taskMenu = false }) {
                         DropdownMenuItem(text = { Text("🎯 自由专注") }, onClick = {
-                            taskMenu = false; viewModel.selectTask(null)
+                            taskMenu = false
+                            viewModel.selectTask(null)
                         })
-                        ui.tasks.forEach { item ->
-                            DropdownMenuItem(text = { Text((item.icon ?: "🌱") + " " + item.title) }, onClick = {
-                                taskMenu = false; viewModel.selectTask(item.id)
-                            })
+                        ui.tasks.filter { it.timerMode != "none" }.forEach { item ->
+                            key(item.id) {
+                                DropdownMenuItem(
+                                    text = { Text((item.icon ?: "🌱") + " " + item.title) },
+                                    onClick = {
+                                        taskMenu = false
+                                        viewModel.selectTask(item.id)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -340,7 +394,6 @@ fun FocusTimerScreen(
 
             Spacer(Modifier.height(18.dp))
 
-            // 亮度
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("☀", color = Color.White.copy(alpha = 0.7f))
                 Slider(
@@ -368,7 +421,10 @@ fun FocusTimerScreen(
                         FocusAudioOption.entries.forEach { option ->
                             DropdownMenuItem(
                                 text = { Text(option.label) },
-                                onClick = { audioMenu = false; viewModel.selectAudio(option) },
+                                onClick = {
+                                    audioMenu = false
+                                    viewModel.selectAudio(option)
+                                },
                             )
                         }
                     }
@@ -416,55 +472,137 @@ fun FocusTimerScreen(
                     label = "停止",
                     enabled = timer != null,
                     square = true,
-                ) { viewModel.stop() }
+                ) { viewModel.requestStop() }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbar,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+        )
     }
 
-    ui.shortPrompt?.let { prompt ->
+    ui.recordPrompt?.let { prompt ->
         AlertDialog(
-            onDismissRequest = viewModel::discardShortFocus,
-            title = { Text("这次专注不足 30 秒") },
-            text = { Text("正向计时只有 ${prompt.actualSeconds} 秒，默认不记录。要保留为一条专注记录吗？") },
-            confirmButton = { TextButton(onClick = viewModel::recordShortFocus) { Text("仍然记录") } },
-            dismissButton = { TextButton(onClick = viewModel::discardShortFocus) { Text("不记录") } },
+            onDismissRequest = viewModel::discardRecord,
+            title = { Text("记录这次专注？") },
+            text = {
+                Text(
+                    "正向计时 ${prompt.actualSeconds} 秒。记录后会写入一条专注记录，" +
+                        "并自动完成今天「${prompt.taskTitle ?: "自由专注"}」的打卡。",
+                )
+            },
+            confirmButton = { TextButton(onClick = viewModel::confirmRecord) { Text("记录") } },
+            dismissButton = { TextButton(onClick = viewModel::discardRecord) { Text("不记录") } },
+        )
+    }
+
+    ui.stopConfirm?.let { confirm ->
+        AlertDialog(
+            onDismissRequest = viewModel::cancelStop,
+            title = { Text("结束本次专注？") },
+            text = {
+                Column {
+                    Text("已专注 ${confirm.actualSeconds / 60} 分 ${confirm.actualSeconds % 60} 秒，还差 ${confirm.remainingSeconds / 60} 分钟。")
+                    Text(
+                        if (confirm.strict) {
+                            "严格模式下提前结束，本次专注会彻底作废，不写入任何记录。"
+                        } else {
+                            "结束后只记录一条「中断」记录，不会触发打卡。"
+                        },
+                        modifier = Modifier.padding(top = 6.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = viewModel::confirmStop) { Text("结束") } },
+            dismissButton = { TextButton(onClick = viewModel::cancelStop) { Text("继续专注") } },
         )
     }
 
     ui.summary?.let { summary ->
         AlertDialog(
             onDismissRequest = viewModel::dismissSummary,
-            title = { Text(if (summary.strictDiscarded) "本次专注未记录" else "完成专注 🍅") },
+            title = {
+                Text(
+                    when {
+                        summary.isBreak -> "休息结束 ☕"
+                        summary.discarded -> "本次专注未记录"
+                        summary.interrupted -> "已记录中断"
+                        else -> "完成专注 🍅"
+                    },
+                )
+            },
             text = {
                 Column {
-                    if (summary.strictDiscarded) {
-                        Text("严格模式下提前结束，本次番茄按规则作废。")
-                    } else {
-                        Text(
-                            (summary.taskTitle ?: "自由专注") + " · " +
-                                if (summary.actualSeconds in 1..59) "${summary.actualSeconds} 秒" else "${summary.minutes} 分钟",
-                        )
-                        if (summary.newBadges.isNotEmpty()) {
+                    when {
+                        summary.discarded -> {
+                            Text(summary.discardReason ?: "本次专注已按规则丢弃。")
+                        }
+                        summary.isBreak -> {
+                            Text("休息了 ${summary.minutes} 分钟，准备好再开始。")
+                        }
+                        else -> {
                             Text(
-                                "解锁徽章：" + summary.newBadges.joinToString("、") { it.name },
-                                color = Tomato,
-                                modifier = Modifier.padding(top = 6.dp),
+                                (summary.taskTitle ?: "自由专注") + " · " +
+                                    if (summary.actualSeconds in 1..59) {
+                                        "${summary.actualSeconds} 秒"
+                                    } else {
+                                        "${summary.minutes} 分钟"
+                                    },
                             )
+                            if (summary.interrupted) {
+                                Text(
+                                    "未达计划时长，只记录中断状态，不计入打卡。",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                            } else if (summary.checkInWritten) {
+                                Text(
+                                    "已自动打卡" + if (summary.streak > 0) " · 连续 ${summary.streak} 天" else "",
+                                    color = Tomato,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                            } else if (summary.streak > 0) {
+                                Text(
+                                    "今日已完成打卡 · 连续 ${summary.streak} 天",
+                                    color = Tomato,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                            }
+                            if (summary.crossDay) {
+                                Text(
+                                    "跨天专注 · 归入 " + (summary.attributedDate?.toString() ?: "开始日"),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                            }
+                            if (summary.newBadges.isNotEmpty()) {
+                                Text(
+                                    "解锁徽章：" + summary.newBadges.joinToString("、") { it.name },
+                                    color = Tomato,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                )
+                            }
                         }
                     }
                 }
             },
             confirmButton = {
-                if (!summary.strictDiscarded) {
-                    TextButton(onClick = { viewModel.dismissSummary(); viewModel.startBreak() }) {
-                        Text("开始休息 ${ui.breakMinutes} 分钟")
-                    }
-                } else {
-                    TextButton(onClick = viewModel::dismissSummary) { Text("好") }
+                when {
+                    summary.discarded -> TextButton(onClick = viewModel::dismissSummary) { Text("好") }
+                    summary.isBreak -> TextButton(onClick = {
+                        viewModel.dismissSummary()
+                        start()
+                    }) { Text("再专注一次") }
+                    else -> TextButton(onClick = {
+                        viewModel.dismissSummary()
+                        viewModel.startBreak()
+                    }) { Text("开始休息 ${ui.breakMinutes} 分钟") }
                 }
             },
             dismissButton = {
-                if (!summary.strictDiscarded) {
+                if (!summary.discarded && !summary.isBreak) {
                     TextButton(onClick = viewModel::dismissSummary) { Text("再来一个") }
                 }
             },
@@ -495,7 +633,7 @@ private fun CircleControl(label: String, enabled: Boolean, square: Boolean = fal
         shape = if (square) RoundedCornerShape(14.dp) else CircleShape,
         color = Color.White.copy(alpha = 0.10f),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
-        modifier = Modifier.size(if (square) 58.dp else 64.dp),
+        modifier = Modifier.size(if (square) 58.dp else 64.dp).semantics { contentDescription = label },
     ) {
         Box(contentAlignment = Alignment.Center) {
             Text(

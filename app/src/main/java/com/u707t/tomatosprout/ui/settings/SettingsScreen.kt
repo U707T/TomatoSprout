@@ -56,7 +56,7 @@ fun SettingsScreen(
     onOpenWebDav: () -> Unit,
     onOpenBadges: () -> Unit,
     onOpenWishlist: () -> Unit,
-    onOpenTasks: () -> Unit,
+    onOpenHistory: () -> Unit,
     onOpenAbout: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -129,13 +129,13 @@ fun SettingsScreen(
                     NumberRow("休息时长", settings.defaultBreakMinutes, 5, 30, viewModel::setBreakMinutes)
                     SwitchRow(
                         "忽略 30 秒内的正向计时",
-                        "结束时先询问，默认不记录",
+                        "开启时不足 30 秒直接丢弃；关闭时先询问是否记录",
                         settings.ignoreShortFocus,
                         viewModel::setIgnoreShortFocus,
                     )
-                    SwitchRow("默认严格模式", "本次专注不可暂停", settings.strictMode, viewModel::setStrict)
+                    SwitchRow("默认严格模式", "本次专注不可暂停，提前结束会彻底作废", settings.strictMode, viewModel::setStrict)
                     SwitchRow("默认正计时", "从 0 开始累计，手动结束", settings.countUpMode, viewModel::setCountUp)
-                    SwitchRow("午夜归属", "凌晨 0–4 点开始的专注记到前一天", settings.midnightShift, viewModel::setMidnight)
+                    SwitchRow("午夜模式", "跨天专注默认记在结束日；开启后强制记在开始日", settings.midnightShift, viewModel::setMidnight)
                 }
             }
 
@@ -184,7 +184,7 @@ fun SettingsScreen(
                     }
                     SettingRow(
                         "清除所有数据",
-                        "二次确认；记录以软删除保留，不再显示",
+                        "二次确认；打卡与专注以软删除保留，不再显示",
                         dangerous = true,
                     ) { confirmClear = true }
                 }
@@ -194,7 +194,7 @@ fun SettingsScreen(
                 SoftCard {
                     Text("更多", style = MaterialTheme.typography.titleMedium)
                     SettingRow("成就徽章", "把坚持过的事点亮") { onOpenBadges() }
-                    SettingRow("全部任务 / 归档", "查看进行中与已归档的任务，可恢复") { onOpenTasks() }
+                    SettingRow("历史时间轴", "月历 + 当日记录，可写心得与补卡") { onOpenHistory() }
                     SettingRow("愿望清单", "只属于自己的小愿望") { onOpenWishlist() }
                     SettingRow("关于番茄芽", "版本 ${BuildConfig.VERSION_NAME} · 隐私说明") { onOpenAbout() }
                 }

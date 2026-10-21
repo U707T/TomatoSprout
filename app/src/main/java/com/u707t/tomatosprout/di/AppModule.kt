@@ -11,7 +11,9 @@ import com.u707t.tomatosprout.data.repo.TaskRepositoryImpl
 import com.u707t.tomatosprout.data.repo.WishRepositoryImpl
 import com.u707t.tomatosprout.data.settings.SettingsRepositoryImpl
 import com.u707t.tomatosprout.domain.AppClock
+import com.u707t.tomatosprout.domain.BadgeRefresher
 import com.u707t.tomatosprout.domain.BadgeRepository
+import com.u707t.tomatosprout.domain.BadgeUseCase
 import com.u707t.tomatosprout.domain.CheckInRepository
 import com.u707t.tomatosprout.domain.FocusRepository
 import com.u707t.tomatosprout.domain.ReminderRepository
@@ -35,7 +37,7 @@ object AppModule {
     @Singleton
     fun database(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.NAME)
-            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
             .build()
 
     @Provides fun taskDao(db: AppDatabase) = db.taskDao()
@@ -62,6 +64,7 @@ abstract class BindModule {
     @Binds @Singleton abstract fun checkInRepo(impl: CheckInRepositoryImpl): CheckInRepository
     @Binds @Singleton abstract fun focusRepo(impl: FocusRepositoryImpl): FocusRepository
     @Binds @Singleton abstract fun badgeRepo(impl: BadgeRepositoryImpl): BadgeRepository
+    @Binds @Singleton abstract fun badgeRefresher(impl: BadgeUseCase): BadgeRefresher
     @Binds @Singleton abstract fun reminderRepo(impl: ReminderRepositoryImpl): ReminderRepository
     @Binds @Singleton abstract fun wishRepo(impl: WishRepositoryImpl): WishRepository
     @Binds @Singleton abstract fun settingsRepo(impl: SettingsRepositoryImpl): SettingsRepository

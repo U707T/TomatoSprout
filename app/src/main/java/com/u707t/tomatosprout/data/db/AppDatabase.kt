@@ -6,7 +6,10 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * 数据库版本 2：新增子任务表、任务排序字段、专注心得字段。
+ * 数据库版本 3（v1.6）：
+ * - 取消归档：旧 ARCHIVED 任务转为软删除；
+ * - focus_sessions 增加 outcome / attributedDate / checkInId；
+ * - 打卡与专注仍然只允许 INSERT 与软删除，删除任务不会级联删除历史。
  *
  * 版本演进规则：
  * - 每次 Entity 变更必须同时提升 version、编写 Migration 与迁移测试；
@@ -27,7 +30,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncManifestEntity::class,
         SyncLogEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -73,6 +76,35 @@ abstract class AppDatabase : RoomDatabase() {
                     """.trimIndent(),
                 )
                 db.execSQL("ALTER TABLE focus_sessions ADD COLUMN note TEXT")
+            }
+        }
+
+        /**
+         * v2 → v3：
+         * 归档语义取消。旧 ARCHIVED 任务按「用户原本想把它从列表移除」的意图转为软删除，
+         * 这样 CheckIn / FocusSession 仍然保留，历史页显示「[已删除] 原任务名」。
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    UPDATE tasks
+                    SET status = 'TODO',
+                        deletedAt = CASE WHEN deletedAt IS NULL THEN MAX(updatedAt, 1) ELSE deletedAt END
+                    WHERE status = 'ARCHIVED'
+                    """.trimIndent(),
+                )
+                db.execSQL("ALTER TABLE focus_sessions ADD COLUMN outcome TEXT")
+                db.execSQL("ALTER TABLE focus_sessions ADD COLUMN attributedDate TEXT")
+                db.execSQL("ALTER TABLE focus_sessions ADD COLUMN checkInId TEXT")
+                db.execSQL("UPDATE focus_sessions SET outcome = 'completed' WHERE outcome IS NULL")
+                db.execSQL(
+                    """
+                    UPDATE focus_sessions
+                    SET attributedDate = strftime('%Y-%m-%d', endedAt / 1000, 'unixepoch', 'localtime')
+                    WHERE attributedDate IS NULL
+                    """.trimIndent(),
+                )
             }
         }
     }

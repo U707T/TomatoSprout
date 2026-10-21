@@ -11,6 +11,10 @@ import kotlinx.serialization.Serializable
  * 所有时间戳统一 epoch millis；日期字段存 yyyy-MM-dd（用户本地时区的逻辑日期）。
  * 枚举以字符串存储，便于同步文件跨版本读取。
  */
+/**
+ * v1.6：删除任务只使用 [deletedAt]（软删除），不再有 status='ARCHIVED'。
+ * 保留行是为了让历史 CheckIn / FocusSession 仍能显示「[已删除] 原任务名」。
+ */
 @Serializable
 @Entity(
     tableName = "tasks",
@@ -99,6 +103,12 @@ data class FocusSessionEntity(
     val interruptionCount: Int = 0,
     val note: String? = null,
     val deletedAt: Long? = null,
+    /** completed / interrupted；v3 新增，旧数据为 null。 */
+    val outcome: String? = null,
+    /** yyyy-MM-dd；v3 新增，避免每次统计重复推算跨午夜归属。 */
+    val attributedDate: String? = null,
+    /** 自动写入的打卡 id；v3 新增。 */
+    val checkInId: String? = null,
 )
 
 @Serializable

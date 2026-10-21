@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -83,22 +84,26 @@ fun QuickAddDialog(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 ) {
                     QuickTaskType.entries.forEach { type ->
-                        FilterChip(
-                            selected = state.type == type,
-                            onClick = { onType(type) },
-                            label = { Text(type.label) },
-                        )
+                        key(type) {
+                            FilterChip(
+                                selected = state.type == type,
+                                onClick = { onType(type) },
+                                label = { Text(type.label) },
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(12.dp))
                 Text("计时方式", style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                     QuickTimerMode.entries.forEach { mode ->
-                        FilterChip(
-                            selected = state.timer == mode,
-                            onClick = { onTimer(mode) },
-                            label = { Text(mode.label) },
-                        )
+                        key(mode) {
+                            FilterChip(
+                                selected = state.timer == mode,
+                                onClick = { onTimer(mode) },
+                                label = { Text(mode.label) },
+                            )
+                        }
                     }
                 }
                 if (state.timer == QuickTimerMode.COUNTDOWN) {
@@ -106,11 +111,13 @@ fun QuickAddDialog(
                     Text("时长", style = MaterialTheme.typography.labelLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(25, 35).forEach { minutes ->
-                            FilterChip(
-                                selected = !state.customDuration && state.durationMinutes == minutes,
-                                onClick = { onCustomDuration(false); onDuration(minutes) },
-                                label = { Text("$minutes 分钟") },
-                            )
+                            key(minutes) {
+                                FilterChip(
+                                    selected = !state.customDuration && state.durationMinutes == minutes,
+                                    onClick = { onCustomDuration(false); onDuration(minutes) },
+                                    label = { Text("$minutes 分钟") },
+                                )
+                            }
                         }
                         FilterChip(
                             selected = state.customDuration,

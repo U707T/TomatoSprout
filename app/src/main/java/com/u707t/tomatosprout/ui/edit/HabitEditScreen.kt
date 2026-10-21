@@ -83,7 +83,7 @@ fun HabitEditScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var subtaskText by remember { mutableStateOf("") }
-    var showArchive by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
     val reminderPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     LaunchedEffect(Unit) { viewModel.saved.collect { onBack() } }
@@ -105,8 +105,12 @@ fun HabitEditScreen(
                 },
                 actions = {
                     if (!state.isNew) {
-                        IconButton(onClick = { showArchive = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "归档", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconButton(onClick = { showDelete = true }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "删除任务",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                     TextButton(onClick = viewModel::save, enabled = !state.loading && !state.saving) {
@@ -446,15 +450,25 @@ fun HabitEditScreen(
         }
     }
 
-    if (showArchive) {
+    if (showDelete) {
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showArchive = false },
-            title = { Text("归档这件事？") },
-            text = { Text("归档不会删除记录，你仍可以在统计里看到历史。") },
-            confirmButton = {
-                TextButton(onClick = { showArchive = false; viewModel.archive() }) { Text("归档") }
+            onDismissRequest = { showDelete = false },
+            title = { Text("删除这件事？") },
+            text = {
+                Text(
+                    "任务会从首页移除，无法恢复；已有的打卡与专注记录会保留，" +
+                        "在历史页显示为「[已删除] 原任务名」。",
+                )
             },
-            dismissButton = { TextButton(onClick = { showArchive = false }) { Text("取消") } },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDelete = false
+                        viewModel.delete()
+                    },
+                ) { Text("确认删除") }
+            },
+            dismissButton = { TextButton(onClick = { showDelete = false }) { Text("取消") } },
         )
     }
 }

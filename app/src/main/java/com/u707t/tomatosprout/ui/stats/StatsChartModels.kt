@@ -15,6 +15,7 @@ data class ChartSlice(
     val seconds: Long,
     val colorIndex: Int,
     val taskId: String?,
+    val taskDeleted: Boolean = false,
 )
 
 data class MonthlyBar(
@@ -38,4 +39,5 @@ data class StatsDashboard(
     val month: YearMonth,
     val bars: List<MonthlyBar>,
     val barMaxSeconds: Long,
+    val hasFocusData: Boolean,
 )
