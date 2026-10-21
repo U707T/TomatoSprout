@@ -12,7 +12,7 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE deletedAt IS NULL AND status != 'ARCHIVED' ORDER BY priority ASC, createdAt ASC")
     fun observeActive(): Flow<List<TaskEntity>>
 
-    @Query("SELECT * FROM tasks ORDER BY createdAt ASC")
+    @Query("SELECT * FROM tasks ORDER BY createdAt ASC, id ASC")
     fun observeAll(): Flow<List<TaskEntity>>
 
     @Query("SELECT * FROM tasks WHERE id = :id LIMIT 1")
@@ -21,7 +21,7 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE parentId = :parentId AND deletedAt IS NULL ORDER BY createdAt ASC")
     suspend fun children(parentId: String): List<TaskEntity>
 
-    @Query("SELECT * FROM tasks ORDER BY createdAt ASC")
+    @Query("SELECT * FROM tasks ORDER BY createdAt ASC, id ASC")
     suspend fun all(): List<TaskEntity>
 
     @Upsert
@@ -48,13 +48,13 @@ interface TaskDao {
 
 @Dao
 interface HabitRuleDao {
-    @Query("SELECT * FROM habit_rules")
+    @Query("SELECT * FROM habit_rules ORDER BY taskId ASC")
     fun observeAll(): Flow<List<HabitRuleEntity>>
 
     @Query("SELECT * FROM habit_rules WHERE taskId = :taskId LIMIT 1")
     suspend fun get(taskId: String): HabitRuleEntity?
 
-    @Query("SELECT * FROM habit_rules")
+    @Query("SELECT * FROM habit_rules ORDER BY taskId ASC")
     suspend fun all(): List<HabitRuleEntity>
 
     @Upsert
@@ -72,13 +72,13 @@ interface HabitRuleDao {
 
 @Dao
 interface GoalRuleDao {
-    @Query("SELECT * FROM goal_rules")
+    @Query("SELECT * FROM goal_rules ORDER BY taskId ASC")
     fun observeAll(): Flow<List<GoalRuleEntity>>
 
     @Query("SELECT * FROM goal_rules WHERE taskId = :taskId LIMIT 1")
     suspend fun get(taskId: String): GoalRuleEntity?
 
-    @Query("SELECT * FROM goal_rules")
+    @Query("SELECT * FROM goal_rules ORDER BY taskId ASC")
     suspend fun all(): List<GoalRuleEntity>
 
     @Upsert
@@ -99,13 +99,13 @@ interface CheckInDao {
     @Query("SELECT * FROM check_ins WHERE deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeActive(): Flow<List<CheckInEntity>>
 
-    @Query("SELECT * FROM check_ins ORDER BY createdAt DESC")
+    @Query("SELECT * FROM check_ins ORDER BY createdAt DESC, id ASC")
     fun observeAll(): Flow<List<CheckInEntity>>
 
     @Query("SELECT * FROM check_ins WHERE deletedAt IS NULL ORDER BY createdAt DESC")
     suspend fun allActive(): List<CheckInEntity>
 
-    @Query("SELECT * FROM check_ins ORDER BY createdAt DESC")
+    @Query("SELECT * FROM check_ins ORDER BY createdAt DESC, id ASC")
     suspend fun all(): List<CheckInEntity>
 
     @Query("SELECT * FROM check_ins WHERE taskId = :taskId AND deletedAt IS NULL ORDER BY checkDate ASC")
@@ -138,13 +138,13 @@ interface FocusDao {
     @Query("SELECT * FROM focus_sessions WHERE deletedAt IS NULL ORDER BY endedAt DESC")
     fun observeActive(): Flow<List<FocusSessionEntity>>
 
-    @Query("SELECT * FROM focus_sessions ORDER BY endedAt DESC")
+    @Query("SELECT * FROM focus_sessions ORDER BY endedAt DESC, id ASC")
     fun observeAll(): Flow<List<FocusSessionEntity>>
 
     @Query("SELECT * FROM focus_sessions WHERE deletedAt IS NULL ORDER BY endedAt DESC")
     suspend fun allActive(): List<FocusSessionEntity>
 
-    @Query("SELECT * FROM focus_sessions ORDER BY endedAt DESC")
+    @Query("SELECT * FROM focus_sessions ORDER BY endedAt DESC, id ASC")
     suspend fun all(): List<FocusSessionEntity>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -183,10 +183,10 @@ interface BadgeDao {
 
 @Dao
 interface ReminderDao {
-    @Query("SELECT * FROM reminder_rules")
+    @Query("SELECT * FROM reminder_rules ORDER BY taskId ASC")
     fun observeAll(): Flow<List<ReminderRuleEntity>>
 
-    @Query("SELECT * FROM reminder_rules")
+    @Query("SELECT * FROM reminder_rules ORDER BY taskId ASC")
     suspend fun all(): List<ReminderRuleEntity>
 
     @Query("SELECT * FROM reminder_rules WHERE taskId = :taskId LIMIT 1")
@@ -210,7 +210,7 @@ interface WishDao {
     @Query("SELECT * FROM wish_items WHERE deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeActive(): Flow<List<WishItemEntity>>
 
-    @Query("SELECT * FROM wish_items ORDER BY createdAt DESC")
+    @Query("SELECT * FROM wish_items ORDER BY createdAt DESC, id ASC")
     suspend fun all(): List<WishItemEntity>
 
     @Upsert

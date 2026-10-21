@@ -14,6 +14,11 @@ pluginManagement {
                     useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${requested.version}")
                 "org.jetbrains.kotlin.jvm" ->
                     useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${requested.version}")
+                // 这两个插件的 marker 在部分镜像上缺失，直接指向实现模块
+                "com.google.devtools.ksp" ->
+                    useModule("com.google.devtools.ksp:symbol-processing-gradle-plugin:${requested.version}")
+                "com.google.dagger.hilt.android" ->
+                    useModule("com.google.dagger:hilt-android-gradle-plugin:${requested.version}")
             }
         }
     }

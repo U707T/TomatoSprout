@@ -132,13 +132,14 @@ class SyncEngine @Inject constructor(
 
             files.filter { it.name != ownFileName(local.deviceId) }.forEach { file ->
                 val bytes = client.get(config, client.fileUrl(config, file.name))
-                val hash = Hashing.sha256(bytes)
-                val previous = manifests[file.name]
-                if (previous?.contentHash == hash) return@forEach
                 val snapshot = runCatching {
                     json.decodeFromString<SyncSnapshot>(bytes.toString(Charsets.UTF_8))
                 }.getOrElse { throw IllegalStateException("远端文件 ${file.name} 格式不正确，已停止以避免数据丢失") }
                 if (snapshot.schemaVersion > 1) throw IllegalStateException("远端备份版本过新，请升级 App")
+                // 语义哈希：忽略每次都会变化的 exportedAt，数据没变就不重复合并
+                val hash = semanticHash(snapshot)
+                val previous = manifests[file.name]
+                if (previous?.contentHash == hash) return@forEach
                 snapshot.settings?.let { remoteSettings ->
                     if (snapshot.exportedAt > latestExportedAt) {
                         latestExportedAt = snapshot.exportedAt
@@ -166,14 +167,20 @@ class SyncEngine @Inject constructor(
 
             // 合并后把本地快照推回自己的文件
             val snapshot = snapshots.create()
-            val bytes = json.encodeToString(SyncSnapshot.serializer(), snapshot).toByteArray(Charsets.UTF_8)
             val ownName = ownFileName(local.deviceId)
-            val etag = client.put(config, client.fileUrl(config, ownName), bytes)
+            val ownHash = semanticHash(snapshot)
+            val previousOwn = syncDao.manifest(local.deviceId, ownName)
+            val etag = if (previousOwn?.contentHash == ownHash && previousOwn.remoteEtag != null) {
+                previousOwn.remoteEtag
+            } else {
+                val bytes = json.encodeToString(SyncSnapshot.serializer(), snapshot).toByteArray(Charsets.UTF_8)
+                client.put(config, client.fileUrl(config, ownName), bytes)
+            }
             syncDao.upsertManifest(
                 SyncManifestEntity(
                     deviceId = local.deviceId,
                     fileName = ownName,
-                    contentHash = Hashing.sha256(bytes),
+                    contentHash = ownHash,
                     remoteEtag = etag,
                     lastSyncedAt = started,
                 ),
@@ -275,6 +282,11 @@ class SyncEngine @Inject constructor(
                 midnightShift = dto.midnightShift,
             )
         }
+    }
+
+    private fun semanticHash(snapshot: SyncSnapshot): String {
+        val canonical = json.encodeToString(SyncSnapshot.serializer(), snapshot.copy(exportedAt = 0L))
+        return Hashing.sha256(canonical.toByteArray(Charsets.UTF_8))
     }
 
     private fun ownFileName(deviceId: String) = "tomatosprout-${deviceId.take(24)}.json"
