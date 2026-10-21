@@ -47,6 +47,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -172,14 +173,26 @@ fun HabitEditScreen(
                         "countup" to "正向计时",
                         "none" to "不计时",
                     ).forEach { (mode, label) ->
-                        FilterChip(
-                            selected = state.timerMode == mode,
-                            onClick = { viewModel.setTimerMode(mode) },
-                            label = { Text(label) },
-                            modifier = Modifier.padding(end = 6.dp),
-                        )
+                        key(mode) {
+                            FilterChip(
+                                selected = state.timerMode == mode,
+                                onClick = { viewModel.setTimerMode(mode) },
+                                label = { Text(label) },
+                                modifier = Modifier.padding(end = 6.dp),
+                            )
+                        }
                     }
                 }
+                Text(
+                    if (state.timerMode == "none") {
+                        "按次打卡：首页只显示「打卡」，点一次记一次。"
+                    } else {
+                        "计时任务：首页只显示「开始」，进入专注页完成后自动打卡。"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
                 if (state.timerMode == "countdown") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("单次时长", modifier = Modifier.weight(1f))

@@ -24,7 +24,10 @@ data class TodoCardUi(
 ) {
     val isHabit: Boolean get() = task.type == TaskType.HABIT
     val isDone: Boolean get() = task.status == TaskStatus.DONE
-    val canFocus: Boolean get() = task.timerMode != "none"
+    /** 不计时 = 按次，直接在首页打卡；倒计时/正向计时 = 计时任务，只显示「开始」。 */
+    val isCountBased: Boolean get() = task.timerMode == "none"
+    val isTimed: Boolean get() = !isCountBased
+    val canFocus: Boolean get() = isTimed
     val partiallyChecked: Boolean get() = todayCheckInCount > 0 && !checkedToday
 }
 
@@ -39,6 +42,7 @@ data class QuickActionUiState(
     val weekMinutes: List<Int>,
     val canMoveUp: Boolean,
     val canMoveDown: Boolean,
+    val countBased: Boolean = false,
 )
 
 data class TodoUiState(

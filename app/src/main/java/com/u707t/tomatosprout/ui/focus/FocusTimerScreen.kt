@@ -83,6 +83,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.domain.SessionAttribution
 import com.u707t.tomatosprout.domain.SystemAppClock
+import com.u707t.tomatosprout.domain.TaskType
 import com.u707t.tomatosprout.domain.TimerEngine
 import com.u707t.tomatosprout.domain.TimerMode
 import com.u707t.tomatosprout.domain.TimerPhase
@@ -211,18 +212,21 @@ fun FocusTimerScreen(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        lerp(base, Color.Black, 0.42f),
-                        lerp(base, Color.Black, 0.70f),
-                        Color(0xFF131111),
+                        lerp(base, Color.Black, 0.28f),
+                        lerp(base, Color.Black, 0.62f),
+                        Color(0xFF121010),
                     ),
                 ),
             ),
     ) {
         Column(
-            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
-                .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // 顶栏固定，不随内容滚动
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 IconButton(onClick = onExit) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "退出专注", tint = Color.White)
                 }
@@ -247,234 +251,261 @@ fun FocusTimerScreen(
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "\u201C$quote\u201D",
-                color = Color.White.copy(alpha = 0.66f),
-                fontSize = 14.sp,
-                fontStyle = FontStyle.Italic,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-            )
+            // 中部可滚动：引语、圆环、任务信息与准备态选择器
+            Column(
+                Modifier.weight(1f).verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "\u201C$quote\u201D",
+                    color = Color.White.copy(alpha = 0.62f),
+                    fontSize = 14.sp,
+                    fontStyle = FontStyle.Italic,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                )
+                Spacer(Modifier.height(12.dp))
 
-            Spacer(Modifier.height(14.dp))
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Box(Modifier.size(300.dp), contentAlignment = Alignment.Center) {
-                    Canvas(Modifier.fillMaxSize()) {
-                        val stroke = 4.dp.toPx()
-                        drawArc(
-                            color = Color.White.copy(alpha = 0.15f),
-                            startAngle = -90f, sweepAngle = 360f, useCenter = false,
-                            topLeft = Offset(stroke / 2, stroke / 2),
-                            size = Size(size.width - stroke, size.height - stroke),
-                            style = Stroke(stroke, cap = StrokeCap.Round),
-                        )
-                        drawArc(
-                            color = Color.White.copy(alpha = 0.82f),
-                            startAngle = -90f, sweepAngle = 360f * progress.coerceIn(0f, 1f), useCenter = false,
-                            topLeft = Offset(stroke / 2, stroke / 2),
-                            size = Size(size.width - stroke, size.height - stroke),
-                            style = Stroke(stroke, cap = StrokeCap.Round),
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (timer == null) {
-                            Text(
-                                "开始",
-                                color = Color.White,
-                                fontSize = 54.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clickable { start() },
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
+                        Canvas(Modifier.fillMaxSize()) {
+                            val stroke = 4.dp.toPx()
+                            drawArc(
+                                color = Color.White.copy(alpha = 0.14f),
+                                startAngle = -90f, sweepAngle = 360f, useCenter = false,
+                                topLeft = Offset(stroke / 2, stroke / 2),
+                                size = Size(size.width - stroke, size.height - stroke),
+                                style = Stroke(stroke, cap = StrokeCap.Round),
                             )
-                            Text(
-                                "${ui.focusMinutes} 分钟 · ${if (ui.settings.countUpMode) "正向计时" else "倒计时"}",
-                                color = Color.White.copy(alpha = 0.7f),
-                                style = MaterialTheme.typography.labelLarge,
+                            drawArc(
+                                color = Color.White.copy(alpha = 0.86f),
+                                startAngle = -90f, sweepAngle = 360f * progress.coerceIn(0f, 1f), useCenter = false,
+                                topLeft = Offset(stroke / 2, stroke / 2),
+                                size = Size(size.width - stroke, size.height - stroke),
+                                style = Stroke(stroke, cap = StrokeCap.Round),
                             )
-                        } else {
-                            Text(
-                                TimerEngine.formatClock(displaySeconds),
-                                color = Color.White,
-                                fontSize = 58.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                when {
-                                    timer.isBreak -> "休息中"
-                                    timer.phase == TimerPhase.PAUSED -> "已暂停"
-                                    timer.mode == TimerMode.COUNTUP -> "正向计时"
-                                    else -> "倒计时"
-                                },
-                                color = Color.White.copy(alpha = 0.68f),
-                                style = MaterialTheme.typography.labelLarge,
-                            )
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            if (timer == null) {
+                                Text(
+                                    "开始",
+                                    color = Color.White,
+                                    fontSize = 52.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.clickable { start() },
+                                )
+                                Text(
+                                    "${ui.focusMinutes} 分钟 · ${if (ui.settings.countUpMode) "正向计时" else "倒计时"}",
+                                    color = Color.White.copy(alpha = 0.70f),
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            } else {
+                                Text(
+                                    TimerEngine.formatClock(displaySeconds),
+                                    color = Color.White,
+                                    fontSize = if (displaySeconds >= 3600) 44.sp else 56.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    when {
+                                        timer.isBreak -> "休息中"
+                                        timer.phase == TimerPhase.PAUSED -> "已暂停"
+                                        timer.mode == TimerMode.COUNTUP -> "正向计时"
+                                        else -> "倒计时"
+                                    },
+                                    color = Color.White.copy(alpha = 0.68f),
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            }
                         }
                     }
                 }
+
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    (task?.icon ?: "🎯") + " " + (task?.title ?: "自由专注"),
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+                val statusLine = when {
+                    timer == null -> "选好任务与时长，然后开始"
+                    timer.isBreak -> "休息也是节奏的一部分"
+                    timer.phase == TimerPhase.PAUSED ->
+                        if (ui.stopConfirm != null || ui.recordPrompt != null) "等待你的确认" else "已暂停"
+                    task?.type == TaskType.POMODORO ->
+                        "第 ${(task.completedPomos + 1).coerceAtLeast(1)} 个番茄"
+                    task?.type == TaskType.HABIT -> "完成后自动打卡"
+                    else -> "专注进行中"
+                } + if (timer?.strict == true) " · 严格模式" else ""
+                Text(
+                    statusLine,
+                    color = Color.White.copy(alpha = 0.58f),
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+                if (timer?.isBreak == false) {
+                    val crossDayNow = timer?.let {
+                        SessionAttribution.isShifted(it.startedAtEpoch, System.currentTimeMillis(), SystemAppClock.zone())
+                    } == true
+                    if (crossDayNow) {
+                        Text(
+                            if (ui.settings.midnightShift) "已跨天 · 归入开始日" else "已跨天 · 归入结束日",
+                            color = Color.White.copy(alpha = 0.48f),
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+
+                if (timer == null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = { viewModel.setFocusMinutes(ui.focusMinutes - 5) }) {
+                            Text("−", color = Color.White, fontSize = 24.sp)
+                        }
+                        Text(
+                            "${ui.focusMinutes} 分钟",
+                            color = Color.White.copy(alpha = 0.85f),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        TextButton(onClick = { viewModel.setFocusMinutes(ui.focusMinutes + 5) }) {
+                            Text("+", color = Color.White, fontSize = 24.sp)
+                        }
+                    }
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        TextButton(onClick = { taskMenu = true }) {
+                            Text(
+                                (task?.icon ?: "🎯") + " " + (task?.title ?: "自由专注") + " ▾",
+                                color = Color.White.copy(alpha = 0.85f),
+                            )
+                        }
+                        DropdownMenu(expanded = taskMenu, onDismissRequest = { taskMenu = false }) {
+                            DropdownMenuItem(text = { Text("🎯 自由专注") }, onClick = {
+                                taskMenu = false
+                                viewModel.selectTask(null)
+                            })
+                            ui.tasks.filter { it.timerMode != "none" }.forEach { item ->
+                                key(item.id) {
+                                    DropdownMenuItem(
+                                        text = { Text((item.icon ?: "🌱") + " " + item.title) },
+                                        onClick = {
+                                            taskMenu = false
+                                            viewModel.selectTask(item.id)
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
             }
 
-            Spacer(Modifier.height(8.dp))
-            Text(
-                task?.title ?: "自由专注",
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                String.format(java.util.Locale.US, "%02d", (task?.completedPomos ?: 0) + 1) + " 进行中" +
-                    if (timer?.strict == true) " · 严格模式" else "",
-                color = Color.White.copy(alpha = 0.55f),
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-            )
-            if (timer?.isBreak == false) {
-                val crossDayNow = timer?.let {
-                    SessionAttribution.isShifted(it.startedAtEpoch, System.currentTimeMillis(), SystemAppClock.zone())
-                } == true
-                if (crossDayNow) {
-                    Text(
-                        if (ui.settings.midnightShift) "已跨天 · 归入开始日" else "已跨天 · 归入结束日",
-                        color = Color.White.copy(alpha = 0.48f),
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
+            // 底部固定控制区，避免大屏出现整段空白
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.24f)),
+                        ),
+                    )
+                    .padding(horizontal = 20.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("☀", color = Color.White.copy(alpha = 0.7f))
+                    Slider(
+                        value = if (ui.brightness < 0f) 0.6f else ui.brightness,
+                        onValueChange = viewModel::setBrightness,
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color.White.copy(alpha = 0.7f),
+                            inactiveTrackColor = Color.White.copy(alpha = 0.22f),
+                        ),
                     )
                 }
-            }
 
-            if (timer == null) {
-                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Box {
+                        TextButton(onClick = { audioMenu = true }) {
+                            Text(
+                                "🎵 " + ui.audioTrack.label + if (ui.audioPlaying) " · 播放中" else "",
+                                color = Color.White.copy(alpha = 0.82f),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                        DropdownMenu(expanded = audioMenu, onDismissRequest = { audioMenu = false }) {
+                            FocusAudioOption.entries.forEach { option ->
+                                key(option) {
+                                    DropdownMenuItem(
+                                        text = { Text(option.label) },
+                                        onClick = {
+                                            audioMenu = false
+                                            viewModel.selectAudio(option)
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "白噪音为本地音频",
+                        color = Color.White.copy(alpha = 0.38f),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+
                 Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
+                    Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(onClick = { viewModel.setFocusMinutes(ui.focusMinutes - 5) }) {
-                        Text("−", color = Color.White, fontSize = 24.sp)
-                    }
-                    Text(
-                        "专注 ${ui.focusMinutes} 分钟",
-                        color = Color.White.copy(alpha = 0.85f),
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    TextButton(onClick = { viewModel.setFocusMinutes(ui.focusMinutes + 5) }) {
-                        Text("+", color = Color.White, fontSize = 24.sp)
-                    }
-                }
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    TextButton(onClick = { taskMenu = true }) {
-                        Text(
-                            (task?.icon ?: "🎯") + " " + (task?.title ?: "自由专注") + " ▾",
-                            color = Color.White.copy(alpha = 0.85f),
-                        )
-                    }
-                    DropdownMenu(expanded = taskMenu, onDismissRequest = { taskMenu = false }) {
-                        DropdownMenuItem(text = { Text("🎯 自由专注") }, onClick = {
-                            taskMenu = false
-                            viewModel.selectTask(null)
-                        })
-                        ui.tasks.filter { it.timerMode != "none" }.forEach { item ->
-                            key(item.id) {
-                                DropdownMenuItem(
-                                    text = { Text((item.icon ?: "🌱") + " " + item.title) },
-                                    onClick = {
-                                        taskMenu = false
-                                        viewModel.selectTask(item.id)
-                                    },
-                                )
-                            }
+                    CircleControl(
+                        label = "重置",
+                        enabled = timer != null && !(timer.strict && timer.phase == TimerPhase.RUNNING),
+                    ) { viewModel.resetTimer() }
+                    Surface(
+                        onClick = {
+                            if (timer == null) start() else viewModel.togglePause()
+                        },
+                        enabled = timer == null || !(timer.strict && timer.phase == TimerPhase.RUNNING),
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.92f),
+                        modifier = Modifier.size(78.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                when {
+                                    timer == null -> "开始"
+                                    timer.phase == TimerPhase.PAUSED -> "继续"
+                                    else -> "暂停"
+                                },
+                                color = lerp(base, Color.Black, 0.55f),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp,
+                            )
                         }
                     }
+                    CircleControl(
+                        label = "停止",
+                        enabled = timer != null,
+                        square = true,
+                    ) { viewModel.requestStop() }
                 }
-            }
-
-            Spacer(Modifier.height(18.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("☀", color = Color.White.copy(alpha = 0.7f))
-                Slider(
-                    value = if (ui.brightness < 0f) 0.6f else ui.brightness,
-                    onValueChange = viewModel::setBrightness,
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color.White,
-                        activeTrackColor = Color.White.copy(alpha = 0.7f),
-                        inactiveTrackColor = Color.White.copy(alpha = 0.22f),
-                    ),
-                )
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Box {
-                    TextButton(onClick = { audioMenu = true }) {
-                        Text(
-                            "🎵 " + ui.audioTrack.label + if (ui.audioPlaying) " · 播放中" else "",
-                            color = Color.White.copy(alpha = 0.82f),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
-                    DropdownMenu(expanded = audioMenu, onDismissRequest = { audioMenu = false }) {
-                        FocusAudioOption.entries.forEach { option ->
-                            key(option) {
-                                DropdownMenuItem(
-                                    text = { Text(option.label) },
-                                    onClick = {
-                                        audioMenu = false
-                                        viewModel.selectAudio(option)
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "白噪音为本地音频",
-                    color = Color.White.copy(alpha = 0.38f),
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
-
-            Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircleControl(
-                    label = "重置",
-                    enabled = timer != null && !(timer.strict && timer.phase == TimerPhase.RUNNING),
-                ) { viewModel.resetTimer() }
-                Surface(
-                    onClick = {
-                        if (timer == null) start() else viewModel.togglePause()
-                    },
-                    enabled = timer == null || !(timer.strict && timer.phase == TimerPhase.RUNNING),
-                    shape = CircleShape,
-                    color = Color.White.copy(alpha = 0.92f),
-                    modifier = Modifier.size(80.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            when {
-                                timer == null -> "开始"
-                                timer.phase == TimerPhase.PAUSED -> "继续"
-                                else -> "暂停"
-                            },
-                            color = lerp(base, Color.Black, 0.55f),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp,
-                        )
-                    }
-                }
-                CircleControl(
-                    label = "停止",
-                    enabled = timer != null,
-                    square = true,
-                ) { viewModel.requestStop() }
             }
         }
 

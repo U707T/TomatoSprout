@@ -118,7 +118,11 @@ fun QuickActionSheet(
                         Column(Modifier.weight(1f).padding(start = 10.dp)) {
                             Text(state.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                             Text(
-                                "长按面板 · 删除后历史记录保留",
+                                if (state.countBased) {
+                                    "按次打卡 · 长按面板"
+                                } else {
+                                    "计时任务 · 从专注页完成打卡"
+                                },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

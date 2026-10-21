@@ -106,6 +106,16 @@ fun QuickAddDialog(
                         }
                     }
                 }
+                Text(
+                    if (state.timer == QuickTimerMode.NONE) {
+                        "按次打卡：今天做一次，就在首页点一次「打卡」。"
+                    } else {
+                        "计时任务：首页只显示「开始」，完成后自动写入专注与打卡。"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
                 if (state.timer == QuickTimerMode.COUNTDOWN) {
                     Spacer(Modifier.height(12.dp))
                     Text("时长", style = MaterialTheme.typography.labelLarge)

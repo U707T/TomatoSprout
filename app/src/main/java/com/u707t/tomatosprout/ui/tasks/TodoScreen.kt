@@ -14,10 +14,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -58,7 +56,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.domain.Task
 import com.u707t.tomatosprout.domain.TaskStatus
-import com.u707t.tomatosprout.domain.TaskType
 import com.u707t.tomatosprout.ui.components.ConfirmDialog
 import com.u707t.tomatosprout.ui.components.EmptyState
 import com.u707t.tomatosprout.ui.theme.Tomato
@@ -164,7 +161,13 @@ fun TodoScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
                         )
-                        TextButton(onClick = { onOpenHistory(null) }) { Text("历史 ›") }
+                        TextButton(onClick = { onOpenHistory(null) }) {
+                            Text(
+                                "历史 ›",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
                     }
                 }
                 items(ui.cards, key = { it.task.id }) { card ->
@@ -292,20 +295,36 @@ private fun TodoBigCard(
     onToggleDone: () -> Unit,
 ) {
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-    val cardHeight = (screenHeight / 6).coerceAtLeast(142.dp)
+    val cardHeight = (screenHeight / 7).coerceAtLeast(136.dp)
     val raw = runCatching { Color(card.task.color.toInt()) }.getOrDefault(Tomato)
     val base = lerp(raw, Color(0xFF6E625D), 0.16f)
-    val done = card.task.status == TaskStatus.DONE
+    val done = card.isDone
     val gradient = if (done) {
         Brush.linearGradient(listOf(Color(0xFF8A8580), Color(0xFF5D5855)))
     } else {
         Brush.linearGradient(
             listOf(
-                lerp(base, Color.White, 0.18f),
-                lerp(base, Color.Black, 0.18f),
+                lerp(base, Color.White, 0.24f),
+                lerp(base, Color.Black, 0.14f),
             ),
         )
     }
+    val progressLabel = when {
+        card.subtaskTotal > 0 -> "子任务 ${card.subtaskDone}/${card.subtaskTotal}"
+        card.goal != null -> {
+            val goal = card.goal
+            if (goal.unit == "小时") {
+                "目标 ${goal.used / 3600}/${(goal.target ?: 0) / 3600} 小时"
+            } else {
+                "目标 ${percentLabel(goal.used, goal.target)} 次"
+            }
+        }
+        card.isHabit && card.streak > 0 -> "连续 ${card.streak} 天"
+        else -> null
+    }
+    val modeLabel = if (card.isCountBased) "按次打卡" else card.timerLabel
+    val metaLine = listOfNotNull(modeLabel, progressLabel).joinToString(" · ")
+
     Box(
         Modifier
             .fillMaxWidth()
@@ -321,139 +340,98 @@ private fun TodoBigCard(
                 Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.16f))),
             ),
         )
-        Column(Modifier.fillMaxSize().padding(18.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text((card.task.icon ?: "🍅") + " ", fontSize = 18.sp, color = Color.White)
-                        Text(
-                            card.task.title,
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                    }
-                    val progressLabel = when {
-                        card.subtaskTotal > 0 -> "子任务 ${card.subtaskDone}/${card.subtaskTotal}"
-                        card.goal != null -> {
-                            val goal = card.goal
-                            if (goal.unit == "小时") {
-                                "目标 ${goal.used / 3600}/${(goal.target ?: 0) / 3600} 小时"
-                            } else {
-                                "目标 ${percentLabel(goal.used, goal.target)} 次"
-                            }
-                        }
-                        card.isHabit && card.streak > 0 -> "连续 ${card.streak} 天"
-                        else -> null
-                    }
-                    if (progressLabel != null) {
-                        Text(
-                            progressLabel,
-                            color = Color.White.copy(alpha = 0.82f),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
-                }
-                if (card.task.type == TaskType.TODO && card.subtaskTotal == 0) {
-                    Surface(
-                        onClick = onToggleDone,
-                        shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.16f),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.45f)),
-                        modifier = Modifier.size(32.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(if (done) "✓" else "", color = Color.White, fontSize = 15.sp)
-                        }
-                    }
-                    Spacer(Modifier.size(8.dp))
-                }
+        Column(Modifier.fillMaxSize().padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text((card.task.icon ?: "🍅") + " ", fontSize = 18.sp, color = Color.White)
+                Text(
+                    card.task.title,
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
             }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                metaLine,
+                color = Color.White.copy(alpha = 0.78f),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Spacer(Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
                         when {
                             done -> "已完成"
-                            card.isHabit && card.checkedToday ->
+                            card.isCountBased && card.checkedToday ->
                                 "今日已打卡 ${card.todayCheckInCount}/${card.habitTarget}"
-                            card.isHabit && card.partiallyChecked ->
-                                "今日打卡 ${card.todayCheckInCount}/${card.habitTarget} · 还差 " +
+                            card.isCountBased && card.partiallyChecked ->
+                                "今日 ${card.todayCheckInCount}/${card.habitTarget} · 还差 " +
                                     "${(card.habitTarget - card.todayCheckInCount).coerceAtLeast(1)} 次"
-                            card.isHabit -> "今日待打卡"
-                            card.todayFocusCount > 0 -> "今日专注 ${card.todayFocusCount} 次"
-                            else -> card.timerLabel
+                            card.isCountBased -> "今日待打卡"
+                            card.isHabit && card.checkedToday ->
+                                "今日已打卡 ${card.todayCheckInCount}/${card.habitTarget} · 可继续专注"
+                            card.todayFocusCount > 0 -> "今日已专注 ${card.todayFocusCount} 次"
+                            else -> "准备开始"
                         },
-                        color = Color.White.copy(alpha = 0.92f),
+                        color = Color.White.copy(alpha = 0.94f),
                         style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "今日 ${card.todayFocusMinutes} 分钟 · 累计 ${formatDuration(card.totalFocusSeconds)}",
-                        color = Color.White.copy(alpha = 0.72f),
+                        "今日 ${card.todayFocusMinutes} 分钟 · 累计 ${formatCardDuration(card.totalFocusSeconds)}",
+                        color = Color.White.copy(alpha = 0.68f),
                         style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
                     )
                 }
-                if (card.isHabit) {
-                    Surface(
-                        onClick = onCheckIn,
-                        shape = RoundedCornerShape(18.dp),
-                        color = if (card.checkedToday) {
-                            Color.White.copy(alpha = 0.18f)
-                        } else {
-                            Color.White.copy(alpha = 0.94f)
-                        },
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.55f)),
-                        modifier = Modifier.height(40.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp)) {
-                            Text(
-                                when {
-                                    card.checkedToday -> "已打卡"
-                                    card.partiallyChecked -> "继续打卡"
-                                    else -> "打卡"
-                                },
-                                color = if (card.checkedToday) Color.White else Tomato,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp,
-                            )
-                        }
-                    }
-                    Spacer(Modifier.size(8.dp))
+                val actionLabel = when {
+                    done -> "重新打开"
+                    !card.isCountBased -> "开始"
+                    card.checkedToday -> "已打卡"
+                    card.partiallyChecked -> "继续打卡"
+                    else -> "打卡"
                 }
-                if (!done && card.canFocus) {
-                    Surface(
-                        onClick = onStart,
-                        shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.20f),
-                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.55f)),
-                        modifier = Modifier.size(56.dp),
+                val filled = !done && (!card.isCountBased || !card.checkedToday)
+                Surface(
+                    onClick = when {
+                        done -> onToggleDone
+                        card.isCountBased -> onCheckIn
+                        else -> onStart
+                    },
+                    shape = RoundedCornerShape(22.dp),
+                    color = if (filled) Color.White.copy(alpha = 0.94f) else Color.White.copy(alpha = 0.14f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.55f)),
+                    modifier = Modifier.height(44.dp),
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.padding(horizontal = 18.dp),
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                if (card.isHabit) "专注" else "开始",
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = if (card.isHabit) 13.sp else 15.sp,
-                            )
-                        }
-                    }
-                } else if (done) {
-                    Surface(
-                        onClick = onToggleDone,
-                        shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.12f),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
-                        modifier = Modifier.height(40.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp)) {
-                            Text("重新打开", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp)
-                        }
+                        Text(
+                            actionLabel,
+                            color = if (filled) Tomato else Color.White.copy(alpha = 0.92f),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+private fun formatCardDuration(seconds: Long): String {
+    val safe = seconds.coerceAtLeast(0)
+    return when {
+        safe <= 0 -> "0 分钟"
+        safe < 60 -> "<1 分钟"
+        safe < 3600 -> "${safe / 60} 分钟"
+        else -> "${safe / 3600} 小时 ${(safe % 3600) / 60} 分"
     }
 }

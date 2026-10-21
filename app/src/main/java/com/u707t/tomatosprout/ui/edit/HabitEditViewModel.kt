@@ -42,7 +42,7 @@ data class EditState(
     val reminderTime: String = "20:00",
     val goalTarget: String = "",
     val goalEndDate: LocalDate = LocalDate.now().plusDays(30),
-    val timerMode: String = "countdown",
+    val timerMode: String = "none",
     val focusMinutes: Int = 25,
     val subtasks: List<SubTask> = emptyList(),
     val loading: Boolean = true,
@@ -131,7 +131,16 @@ class HabitEditViewModel @Inject constructor(
 
     fun edit(transform: (EditState) -> EditState) = _state.update(transform)
 
-    fun setType(type: TaskType) = edit { it.copy(type = type) }
+    fun setType(type: TaskType) = edit { state ->
+        val defaultTimer = when (type) {
+            TaskType.POMODORO -> "countdown"
+            TaskType.HABIT, TaskType.GOAL, TaskType.TODO -> "none"
+        }
+        state.copy(
+            type = type,
+            timerMode = if (state.isNew) defaultTimer else state.timerMode,
+        )
+    }
     fun setTitle(value: String) = edit { it.copy(title = value.take(60)) }
     fun setNote(value: String) = edit { it.copy(note = value.take(500)) }
     fun setIcon(value: String) = edit { it.copy(icon = value) }

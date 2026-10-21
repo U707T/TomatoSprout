@@ -93,7 +93,7 @@ class TodoViewModel @Inject constructor(
             TodoCardUi(
                 task = task,
                 timerLabel = when (task.timerMode) {
-                    "none" -> "不计时 · 直接打卡"
+                    "none" -> "按次打卡"
                     "countup" -> "正向计时"
                     else -> "倒计时 · ${task.focusMinutes} 分钟"
                 },
@@ -133,6 +133,7 @@ class TodoViewModel @Inject constructor(
                     weekMinutes = it.weekMinutes,
                     canMoveUp = selectedIndex > 0,
                     canMoveDown = selectedIndex >= 0 && selectedIndex < cards.lastIndex,
+                    countBased = it.isCountBased,
                 )
             },
         )
@@ -151,6 +152,12 @@ class TodoViewModel @Inject constructor(
     }
 
     fun toggleCheckIn(task: Task) {
+        if (task.timerMode != "none") {
+            viewModelScope.launch {
+                messages.emit("这是计时任务，请点「开始」完成一次专注后自动打卡")
+            }
+            return
+        }
         viewModelScope.launch {
             when (val result = checkInUseCase.toggleToday(task)) {
                 is CheckInResult.Checked ->
