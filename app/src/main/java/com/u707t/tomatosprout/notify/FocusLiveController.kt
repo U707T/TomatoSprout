@@ -1,5 +1,6 @@
 package com.u707t.tomatosprout.notify
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -24,6 +25,7 @@ import javax.inject.Singleton
 @Singleton
 class FocusLiveController @Inject constructor(@ApplicationContext private val context: Context) {
 
+    @SuppressLint("MissingPermission") // 已通过 NotificationPermission.canPost 显式校验
     fun update(state: TimerState, nowMono: Long, title: String) {
         if (!NotificationPermission.canPost(context)) return
         val views = RemoteViews(context.packageName, R.layout.notification_focus)

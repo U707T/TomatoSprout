@@ -1,6 +1,7 @@
 package com.u707t.tomatosprout.notify
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -94,6 +95,7 @@ object ContentIntents {
 
 @Singleton
 class ReminderNotifier @Inject constructor(@ApplicationContext private val context: Context) {
+    @SuppressLint("MissingPermission") // 已通过 NotificationPermission.canPost 显式校验
     fun notifyReminder(ruleId: String, title: String, body: String) {
         if (!NotificationPermission.canPost(context)) return
         val builder = NotificationCompat.Builder(context, NotificationChannels.CHANNEL_REMINDER)
