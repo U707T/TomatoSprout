@@ -115,6 +115,7 @@ fun TodayScreen(
                 onClick = onAddHabit,
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = Color.White,
+                modifier = Modifier.padding(bottom = 64.dp),
             ) { Icon(Icons.Default.Add, contentDescription = "新建习惯") }
         },
         containerColor = MaterialTheme.colorScheme.background,

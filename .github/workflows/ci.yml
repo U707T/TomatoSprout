@@ -28,8 +28,6 @@ jobs:
           distribution: zulu
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install SDK components (compileSdk 37)
         run: |
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"

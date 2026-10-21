@@ -114,6 +114,8 @@ class FocusViewModel @Inject constructor(
                 now.value = SystemClock.elapsedRealtime()
                 if (stored.state.phase == TimerPhase.RUNNING) refresh(false)
             }
+            // 必须在计时恢复之后再消费通知按钮命令，否则冷启动时 stop/pause 会丢
+            consumePendingCommand()
         }
         viewModelScope.launch {
             var ticks = 0
@@ -139,7 +141,6 @@ class FocusViewModel @Inject constructor(
                 }
             }
         }
-        consumePendingCommand()
     }
 
     fun onResume() {
