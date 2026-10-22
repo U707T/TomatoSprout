@@ -1,14 +1,21 @@
 package com.u707t.tomatosprout.ui.focus
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.u707t.tomatosprout.domain.InterruptReason
 import com.u707t.tomatosprout.ui.theme.Tomato
 
 /** 正计时结束：是否记录。 */
@@ -38,6 +45,7 @@ fun StopConfirmDialog(
     confirm: StopConfirm,
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
+    onReason: (InterruptReason) -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
@@ -54,6 +62,25 @@ fun StopConfirmDialog(
                     modifier = Modifier.padding(top = 6.dp),
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                if (!confirm.strict) {
+                    Text(
+                        "中断原因",
+                        modifier = Modifier.padding(top = 12.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        InterruptReason.entries.forEach { reason ->
+                            FilterChip(
+                                selected = confirm.reason == reason,
+                                onClick = { onReason(reason) },
+                                label = { Text(reason.label) },
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = onConfirm) { Text("结束") } },
@@ -66,8 +93,9 @@ fun StopConfirmDialog(
 fun SessionSummaryDialog(
     summary: SessionSummary,
     breakMinutes: Int,
+    longBreakMinutes: Int,
     onDismiss: () -> Unit,
-    onStartBreak: () -> Unit,
+    onStartBreak: (Boolean) -> Unit,
     onStartAgain: () -> Unit,
 ) {
     AlertDialog(
@@ -106,6 +134,13 @@ fun SessionSummaryDialog(
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(top = 4.dp),
                             )
+                            summary.interruptReason?.let { reason ->
+                                Text(
+                                    "中断原因：$reason",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                            }
                         } else if (summary.checkInWritten) {
                             Text(
                                 "已自动打卡" + if (summary.streak > 0) " · 连续 ${summary.streak} 天" else "",
@@ -141,12 +176,27 @@ fun SessionSummaryDialog(
             when {
                 summary.discarded -> TextButton(onClick = onDismiss) { Text("好") }
                 summary.isBreak -> TextButton(onClick = onStartAgain) { Text("再专注一次") }
-                else -> TextButton(onClick = onStartBreak) { Text("开始休息 $breakMinutes 分钟") }
+                else -> TextButton(onClick = { onStartBreak(summary.longBreakDue) }) {
+                    Text(
+                        if (summary.longBreakDue) {
+                            "长休息 $longBreakMinutes 分钟"
+                        } else {
+                            "开始休息 $breakMinutes 分钟"
+                        },
+                    )
+                }
             }
         },
         dismissButton = {
             if (!summary.discarded && !summary.isBreak) {
-                TextButton(onClick = onDismiss) { Text("再来一个") }
+                Row {
+                    if (summary.longBreakDue) {
+                        TextButton(onClick = { onStartBreak(false) }) {
+                            Text("短休息 $breakMinutes 分钟")
+                        }
+                    }
+                    TextButton(onClick = onDismiss) { Text("再来一个") }
+                }
             }
         },
     )

@@ -14,7 +14,7 @@
 - **历史时间轴（二级页）**：月历 + 选中日时间轴；点击记录写心得；最近 7 天补卡并标记 `isMakeup`。
 - **统计**：日 / 周 / 月环形分布、月度柱状图、高效时段（24 小时）、连续纪录、周/月完成率、月/年 Canvas 热力图；空数据与异常时长均有兜底。
 - **删除任务**：取消归档；二次确认后软删除，打卡与专注历史保留，显示为「[已删除] 原任务名」并置灰。
-- **番茄专注**：倒计时/正计时、5–180 分钟、严格模式、退后台按真实时间校正、实时活动卡片、屏幕常亮 / 亮度 / 本地白噪音 / 分享海报。
+- **番茄专注**：倒计时/正计时、5–180 分钟、严格模式、退后台按真实时间校正、实时活动卡片、屏幕常亮 / 亮度 / 本地白噪音 / 分享海报；中断原因与每 4 个番茄的长休息建议。
 - **成就徽章**：连续 7/30/100 天、100 次打卡、100 小时专注、50 个番茄、圆满日等，解锁有轻量缩放淡入动效。
 - **数据资产**：JSON 全量备份 / CSV 打卡导出 / JSON 导入（字段校验 + 冲突提示）。
 - **WebDAV**：手动双向同步、哈希 + ETag 比对、只增不删、冲突副本保留、同步日志、仅 Wi-Fi、失败最多重试 3 次。
@@ -48,7 +48,7 @@ WorkManager 传递引入的 `WAKE_LOCK` / `FOREGROUND_SERVICE` 已在 Manifest �
 
 ```bash
 export ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk
-./gradlew :core:domain:test          # 45 个纯 JVM 单测
+./gradlew :core:domain:test          # 48 个纯 JVM 单测
 ./gradlew :app:lintDebug             # 静态检查（0 error）
 ./gradlew :app:testDebugUnitTest
 ./gradlew :app:assembleDebug

@@ -42,6 +42,7 @@ class SettingsViewModel @Inject constructor(
     fun setDndEnd(value: String) = update { it.copy(dndEnd = value) }
     fun setFocusMinutes(value: Int) = update { it.copy(defaultFocusMinutes = value.coerceIn(5, 180)) }
     fun setBreakMinutes(value: Int) = update { it.copy(defaultBreakMinutes = value.coerceIn(5, 30)) }
+    fun setLongBreakMinutes(value: Int) = update { it.copy(longBreakMinutes = value.coerceIn(10, 60)) }
     fun setIgnoreShortFocus(enabled: Boolean) = update { it.copy(ignoreShortFocus = enabled) }
     fun setStrict(enabled: Boolean) = update { it.copy(strictMode = enabled) }
     fun setCountUp(enabled: Boolean) = update { it.copy(countUpMode = enabled) }
@@ -88,7 +89,7 @@ class SettingsViewModel @Inject constructor(
             messages.emit(
                 when {
                     !result.ok -> "导入失败：${result.error}"
-                    else -> "导入完成：新增 ${result.imported} 条，冲突保留 ${result.conflicts} 条，跳过 ${result.skipped} 条"
+                    else -> "导入完成：导入 ${result.imported} 条（新增/更新），冲突保留 ${result.conflicts} 条，跳过 ${result.skipped} 条"
                 },
             )
         }

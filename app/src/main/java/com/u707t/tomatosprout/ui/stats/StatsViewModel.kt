@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.u707t.tomatosprout.domain.AppClock
+import com.u707t.tomatosprout.domain.InterruptReason
 import com.u707t.tomatosprout.domain.StatsData
 import com.u707t.tomatosprout.domain.StatsUseCase
 import com.u707t.tomatosprout.domain.TaskDisplay
@@ -203,6 +204,16 @@ class StatsViewModel @Inject constructor(
         }
         val hours = (0..23).map { hour -> HourBucket(hour, hourSeconds[hour].coerceAtLeast(0L)) }
         val bestHour = hours.maxByOrNull { it.seconds }?.takeIf { it.seconds > 0 }?.hour
+        val interruptReasons = inRange
+            .filter { it.outcome == "interrupted" }
+            .groupBy { it.interruptReason }
+            .map { (raw, sessions) ->
+                val label = raw?.let {
+                    runCatching { InterruptReason.valueOf(it).label }.getOrDefault(it)
+                } ?: "未记录"
+                InterruptReasonCount(label, sessions.size)
+            }
+            .sortedByDescending { it.count }
         return StatsDashboard(
             selectedDate = selected,
             range = f.range,
@@ -221,6 +232,7 @@ class StatsViewModel @Inject constructor(
             hasFocusData = total > 0 && colored.isNotEmpty(),
             hours = hours,
             bestHour = bestHour,
+            interruptReasons = interruptReasons,
         )
     }
 }

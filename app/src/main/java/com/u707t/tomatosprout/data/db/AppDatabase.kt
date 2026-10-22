@@ -6,10 +6,11 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * 数据库版本 4（v1.7）：
- * - 任务增加「实际番茄数」的单一来源回填：completedPomos = 已完成的专注次数；
- * - 专注结算对所有任务类型累加 completedPomos（不再只限番茄任务）；
- * - 打卡与专注仍然只允许 INSERT 与软删除，删除任务不会级联删除历史。
+ * 数据库版本 5（v1.8）：
+ * - check_ins / focus_sessions 增加 updatedAt，用于记录级双向合并；
+ * - focus_sessions 增加 interruptReason，记录中断原因；
+ * - 旧数据的 updatedAt 分别回填为 createdAt / endedAt；
+ * - 打卡与专注仍然只做软删除，删除任务不会级联删除历史。
  *
  * 版本演进规则：
  * - 每次 Entity 变更必须同时提升 version、编写 Migration 与迁移测试；
@@ -30,7 +31,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncManifestEntity::class,
         SyncLogEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -128,6 +129,21 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+        /**
+         * v4 → v5：记录级双向合并所需的时间戳 + 中断原因。
+         *
+         * updatedAt 用 NOT NULL DEFAULT 0 加列，再回填为原记录时间；
+         * Entity 上对应 @ColumnInfo(defaultValue = "0")，保证 Room 校验一致。
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE check_ins ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE check_ins SET updatedAt = createdAt WHERE updatedAt = 0")
+                db.execSQL("ALTER TABLE focus_sessions ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE focus_sessions SET updatedAt = endedAt WHERE updatedAt = 0")
+                db.execSQL("ALTER TABLE focus_sessions ADD COLUMN interruptReason TEXT")
             }
         }
     }

@@ -127,6 +127,7 @@ fun SettingsScreen(
                     Text("专注默认值", style = MaterialTheme.typography.titleMedium)
                     NumberRow("专注时长", settings.defaultFocusMinutes, 5, 180, viewModel::setFocusMinutes)
                     NumberRow("休息时长", settings.defaultBreakMinutes, 5, 30, viewModel::setBreakMinutes)
+                    NumberRow("长休息时长", settings.longBreakMinutes, 10, 60, viewModel::setLongBreakMinutes)
                     SwitchRow(
                         "忽略 30 秒内的正向计时",
                         "开启时不足 30 秒直接丢弃；关闭时先询问是否记录",

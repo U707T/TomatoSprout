@@ -65,7 +65,7 @@ class BackupManager @Inject constructor(
             json.decodeFromString<SyncSnapshot>(text)
         }.getOrElse { return ImportResult(false, error = "文件不是有效的番茄芽备份：${it.message?.take(80)}") }
 
-        if (snapshot.schemaVersion > 2) return ImportResult(false, error = "备份版本较新，请升级 App 后再导入")
+        if (snapshot.schemaVersion > 3) return ImportResult(false, error = "备份版本较新，请升级 App 后再导入")
         val invalid = validate(snapshot)
         if (invalid != null) return ImportResult(false, error = invalid)
 
@@ -101,17 +101,18 @@ class BackupManager @Inject constructor(
         snapshot.goalRules.filter { it.taskId in acceptedTaskIds }.forEach {
             if (tasks.goalRule(it.taskId) == null) tasks.upsertGoalRule(it.toDomain())
         }
-        val checkReport = checkIns.restoreAll(snapshot.checkIns.map { it.toDomain() })
-        val focusReport = focus.restoreAll(snapshot.focusSessions.map { it.toDomain() })
+        val checkReport = checkIns.mergeAll(snapshot.checkIns.map { it.toDomain() })
+        val focusReport = focus.mergeAll(snapshot.focusSessions.map { it.toDomain() })
         // 导入的历史专注会改变番茄账本，按记录重算一次
         tasks.recountCompletedPomos()
         val badgeReport = badges.restoreAll(snapshot.badges.map { it.toDomain() })
         val wishReport = wishes.restoreAll(snapshot.wishes.map { it.toDomain() })
         val reminderReport = reminders.restoreAll(snapshot.reminders.map { it.toDomain() })
-        imported += checkReport.inserted + focusReport.inserted + badgeReport.inserted +
-            wishReport.inserted + reminderReport.inserted
-        skipped += checkReport.skipped + focusReport.skipped + badgeReport.skipped +
-            wishReport.skipped + reminderReport.skipped
+        imported += checkReport.inserted + checkReport.updated +
+            focusReport.inserted + focusReport.updated +
+            badgeReport.inserted + wishReport.inserted + reminderReport.inserted
+        skipped += checkReport.skipped + focusReport.skipped +
+            badgeReport.skipped + wishReport.skipped + reminderReport.skipped
 
         snapshot.settings?.let { s ->
             settings.update {
@@ -124,6 +125,7 @@ class BackupManager @Inject constructor(
                     dndEnd = s.dndEnd,
                     defaultFocusMinutes = s.defaultFocusMinutes.coerceIn(5, 180),
                     defaultBreakMinutes = s.defaultBreakMinutes.coerceIn(5, 30),
+                    longBreakMinutes = s.longBreakMinutes.coerceIn(10, 60),
                     ignoreShortFocus = s.ignoreShortFocus,
                     strictMode = s.strictMode,
                     countUpMode = s.countUpMode,
@@ -151,6 +153,9 @@ class BackupManager @Inject constructor(
             .onFailure { return "打卡记录的日期格式错误" }
         if (snapshot.checkIns.any { it.id.isBlank() || it.taskId.isBlank() }) return "打卡记录缺少 id"
         if (snapshot.checkIns.any { it.count < 0 }) return "打卡次数不合法"
+        if (snapshot.checkIns.groupBy { Triple(it.taskId, it.checkDate, it.isMakeup) }.any { it.value.size > 1 }) {
+            return "打卡记录存在重复的任务日期"
+        }
         if (snapshot.habitRules.any { it.targetCountPerPeriod < 0 }) return "习惯目标次数不合法"
         if (snapshot.goalRules.any { (it.targetTotalCount ?: 0) < 0 || (it.targetTotalSeconds ?: 0) < 0 }) {
             return "目标数值不合法"

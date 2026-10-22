@@ -113,6 +113,7 @@ fun CheckInEntity.toDomain() = CheckIn(
     isMakeup = isMakeup,
     createdAt = createdAt,
     deletedAt = deletedAt,
+    updatedAt = updatedAt,
 )
 
 fun CheckIn.toEntity() = CheckInEntity(
@@ -126,6 +127,7 @@ fun CheckIn.toEntity() = CheckInEntity(
     isMakeup = isMakeup,
     createdAt = createdAt,
     deletedAt = deletedAt,
+    updatedAt = updatedAt,
 )
 
 fun FocusSessionEntity.toDomain() = FocusSession(
@@ -143,6 +145,8 @@ fun FocusSessionEntity.toDomain() = FocusSession(
     outcome = outcome,
     attributedDate = attributedDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
     checkInId = checkInId,
+    interruptReason = interruptReason,
+    updatedAt = updatedAt,
 )
 
 fun FocusSession.toEntity() = FocusSessionEntity(
@@ -160,6 +164,8 @@ fun FocusSession.toEntity() = FocusSessionEntity(
     outcome = outcome,
     attributedDate = attributedDate?.toString(),
     checkInId = checkInId,
+    interruptReason = interruptReason,
+    updatedAt = updatedAt,
 )
 
 fun ReminderRuleEntity.toDomain() = ReminderRule(id, taskId, timeOfDay, weekdaysMask, enabled)

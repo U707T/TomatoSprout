@@ -8,9 +8,12 @@ import androidx.lifecycle.viewModelScope
 import com.u707t.tomatosprout.data.focus.FocusTimerStore
 import com.u707t.tomatosprout.di.ApplicationScope
 import com.u707t.tomatosprout.domain.AppSettings
+import com.u707t.tomatosprout.domain.BreakCycle
 import com.u707t.tomatosprout.domain.FocusEndReason
+import com.u707t.tomatosprout.domain.FocusRepository
 import com.u707t.tomatosprout.domain.FocusSessionUseCase
 import com.u707t.tomatosprout.domain.FocusSettlementInput
+import com.u707t.tomatosprout.domain.InterruptReason
 import com.u707t.tomatosprout.domain.PauseResult
 import com.u707t.tomatosprout.domain.SessionAttribution
 import com.u707t.tomatosprout.domain.SettingsRepository
@@ -49,6 +52,7 @@ import kotlin.math.max
 class FocusTimerViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val focusSessionUseCase: FocusSessionUseCase,
+    private val focusRepo: FocusRepository,
     private val tasks: TaskRepository,
     private val settingsRepo: SettingsRepository,
     private val live: FocusLiveController,
@@ -240,12 +244,17 @@ class FocusTimerViewModel @Inject constructor(
         start(state)
     }
 
-    fun startBreak() {
+    fun startBreak(long: Boolean = false) {
         if (controller.timer.value?.isActive == true) return
         summary.value = null
+        val minutes = if (long) {
+            settings.value.longBreakMinutes.coerceIn(10, 60)
+        } else {
+            breakMinutes.value
+        }
         val state = TimerEngine.start(
             mode = TimerMode.COUNTDOWN,
-            plannedSeconds = breakMinutes.value * 60,
+            plannedSeconds = minutes * 60,
             nowMono = SystemClock.elapsedRealtime(),
             nowEpoch = System.currentTimeMillis(),
             strict = false,
@@ -333,16 +342,20 @@ class FocusTimerViewModel @Inject constructor(
         controller.resumeFromDialog()
     }
 
+    /** 停止确认弹窗里切换中断原因。 */
+    fun setStopReason(reason: InterruptReason) {
+        stopConfirm.value = stopConfirm.value?.copy(reason = reason)
+    }
+
     fun confirmStop() {
+        val reason = stopConfirm.value?.reason
         stopConfirm.value = null
         dialogFrozen = false
         val snap = controller.snapshot() ?: return
+        val reachedPlan = snap.elapsedSeconds >= snap.state.plannedSeconds
         settle(
-            if (snap.elapsedSeconds >= snap.state.plannedSeconds) {
-                FocusEndReason.COUNTDOWN_FINISHED
-            } else {
-                FocusEndReason.MANUAL_STOP
-            },
+            reason = if (reachedPlan) FocusEndReason.COUNTDOWN_FINISHED else FocusEndReason.MANUAL_STOP,
+            interruptReason = if (reachedPlan) null else reason,
         )
     }
 
@@ -421,7 +434,7 @@ class FocusTimerViewModel @Inject constructor(
      * 统一结算入口：先取走计时快照并清理运行时，再把数据写入交给 UseCase。
      * 写入挂在应用级作用域上，退出页面也不会中断。
      */
-    private fun settle(reason: FocusEndReason) {
+    private fun settle(reason: FocusEndReason, interruptReason: InterruptReason? = null) {
         val snap = controller.snapshot() ?: return
         val stopped = snap.state
         val elapsed = snap.elapsedSeconds
@@ -483,10 +496,20 @@ class FocusTimerViewModel @Inject constructor(
                         midnightMode = settings.value.midnightShift,
                         ignoreShortFocus = settings.value.ignoreShortFocus,
                         reason = reason,
+                        interruptReason = interruptReason,
                     ),
                 )
             }.onSuccess { result ->
                 val seconds = result.session?.actualSeconds ?: elapsed
+                // 长休息节奏：按归属日统计已完成的番茄数（包含刚写入的这一条）
+                val longBreakDue = if (result.session?.mode == "pomodoro" && !result.interrupted) {
+                    val count = runCatching {
+                        focusRepo.completedPomodorosOn(result.attributedDate)
+                    }.getOrDefault(0)
+                    BreakCycle.isLongBreakDue(count)
+                } else {
+                    false
+                }
                 // 如果用户已经开始了下一轮专注，旧摘要不要覆盖新界面
                 if (generation == settlementGeneration) {
                     summary.value = SessionSummary(
@@ -501,6 +524,8 @@ class FocusTimerViewModel @Inject constructor(
                         interrupted = result.interrupted,
                         attributedDate = result.attributedDate,
                         crossDay = crossDay,
+                        interruptReason = result.interruptReason,
+                        longBreakDue = longBreakDue,
                     )
                 }
                 events.emit(

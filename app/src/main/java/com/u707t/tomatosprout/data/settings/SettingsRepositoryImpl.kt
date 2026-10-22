@@ -66,6 +66,7 @@ class SettingsRepositoryImpl @Inject constructor(
         dndEnd = this[K_DND_END] ?: "07:00",
         defaultFocusMinutes = this[K_FOCUS] ?: 25,
         defaultBreakMinutes = this[K_BREAK] ?: 5,
+        longBreakMinutes = this[K_LONG_BREAK] ?: 15,
         ignoreShortFocus = this[K_IGNORE_SHORT] ?: true,
         strictMode = this[K_STRICT] ?: false,
         countUpMode = this[K_COUNTUP] ?: false,
@@ -87,6 +88,7 @@ class SettingsRepositoryImpl @Inject constructor(
         this[K_DND_END] = s.dndEnd
         this[K_FOCUS] = s.defaultFocusMinutes
         this[K_BREAK] = s.defaultBreakMinutes
+        this[K_LONG_BREAK] = s.longBreakMinutes
         this[K_IGNORE_SHORT] = s.ignoreShortFocus
         this[K_STRICT] = s.strictMode
         this[K_COUNTUP] = s.countUpMode
@@ -108,6 +110,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val K_DND_END = stringPreferencesKey("dnd_end")
         val K_FOCUS = intPreferencesKey("default_focus")
         val K_BREAK = intPreferencesKey("default_break")
+        val K_LONG_BREAK = intPreferencesKey("long_break")
         val K_IGNORE_SHORT = booleanPreferencesKey("ignore_short_focus")
         val K_STRICT = booleanPreferencesKey("strict_mode")
         val K_COUNTUP = booleanPreferencesKey("count_up")

@@ -22,6 +22,7 @@ data class SettingsDto(
     val dndEnd: String = "07:00",
     val defaultFocusMinutes: Int = 25,
     val defaultBreakMinutes: Int = 5,
+    val longBreakMinutes: Int = 15,
     val ignoreShortFocus: Boolean = true,
     val strictMode: Boolean = false,
     val countUpMode: Boolean = false,
@@ -31,7 +32,7 @@ data class SettingsDto(
 /** 同步与备份共用同一份快照格式；schemaVersion 用于导入校验。 */
 @Serializable
 data class SyncSnapshot(
-    val schemaVersion: Int = 2,
+    val schemaVersion: Int = 3,
     val deviceId: String = "",
     val exportedAt: Long = 0L,
     val tasks: List<TaskEntity> = emptyList(),

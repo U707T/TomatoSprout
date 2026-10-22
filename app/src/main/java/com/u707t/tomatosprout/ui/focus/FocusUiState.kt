@@ -2,6 +2,7 @@ package com.u707t.tomatosprout.ui.focus
 
 import com.u707t.tomatosprout.domain.AppSettings
 import com.u707t.tomatosprout.domain.Badge
+import com.u707t.tomatosprout.domain.InterruptReason
 import com.u707t.tomatosprout.domain.Task
 import com.u707t.tomatosprout.domain.TimerState
 import java.time.LocalDate
@@ -19,6 +20,10 @@ data class SessionSummary(
     val isBreak: Boolean = false,
     val attributedDate: LocalDate? = null,
     val crossDay: Boolean = false,
+    /** 中断原因展示文案；完成/丢弃时为空。 */
+    val interruptReason: String? = null,
+    /** 今天刚好完成第 4/8/12… 个番茄，摘要里建议长休息。 */
+    val longBreakDue: Boolean = false,
 )
 
 /** 正向计时结束后询问「是否记录」；倒计时自然结束不会出现。 */
@@ -38,6 +43,7 @@ data class StopConfirm(
     val actualSeconds: Int,
     val plannedSeconds: Int,
     val strict: Boolean,
+    val reason: InterruptReason = InterruptReason.DISTRACTED,
 ) {
     val remainingSeconds: Int get() = (plannedSeconds - actualSeconds).coerceAtLeast(0)
 }

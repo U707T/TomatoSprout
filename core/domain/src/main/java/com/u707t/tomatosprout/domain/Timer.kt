@@ -115,6 +115,17 @@ object TimerEngine {
 }
 
 /**
+ * 专注节奏：番茄工作法的「每 4 个番茄一次长休息」。
+ * 放在 Domain，纯函数，可单测；UI 只负责读取今天的完成数。
+ */
+object BreakCycle {
+    const val POMODOROS_PER_LONG_BREAK = 4
+
+    fun isLongBreakDue(completedPomodoros: Int): Boolean =
+        completedPomodoros > 0 && completedPomodoros % POMODOROS_PER_LONG_BREAK == 0
+}
+
+/**
  * 专注归属日期（v1.6）：
  * - 默认按「结束时刻」所在的本地日期归属，跨午夜时自然落到第二天；
  * - 开启 midnightMode（界面上的「午夜模式」）后，强制按「开始时刻」所在日期归属，

@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -67,6 +68,7 @@ class FocusSessionUseCaseTest {
         midnightMode: Boolean = false,
         ignoreShort: Boolean = true,
         mode: String = "pomodoro",
+        interruptReason: InterruptReason? = null,
     ) = FocusSettlementInput(
         task = task,
         mode = mode,
@@ -79,6 +81,7 @@ class FocusSessionUseCaseTest {
         midnightMode = midnightMode,
         ignoreShortFocus = ignoreShort,
         reason = reason,
+        interruptReason = interruptReason,
     )
 
     @Test
@@ -254,6 +257,44 @@ class FocusSessionUseCaseTest {
     }
 
     @Test
+    fun `manual stop records interrupt reason without check-in`() = runBlocking {
+        val f = Fixture()
+        val result = f.useCase.settle(
+            input(
+                f.task,
+                at(day, 9, 0),
+                at(day, 9, 10),
+                actualSeconds = 600,
+                reason = FocusEndReason.MANUAL_STOP,
+                interruptReason = InterruptReason.DISTRACTED,
+            ),
+        )
+
+        assertTrue(result.interrupted)
+        assertFalse(result.checkInWritten)
+        assertEquals("interrupted", f.focus.items.single().outcome)
+        assertEquals("DISTRACTED", f.focus.items.single().interruptReason)
+        assertEquals("DISTRACTED", result.interruptReason)
+        assertTrue(f.checkIns.items.isEmpty())
+    }
+
+    @Test
+    fun `completed session ignores interrupt reason`() = runBlocking {
+        val f = Fixture()
+        f.useCase.settle(
+            input(
+                f.task,
+                at(day, 9, 0),
+                at(day, 9, 25),
+                reason = FocusEndReason.COUNTDOWN_FINISHED,
+                interruptReason = InterruptReason.OTHER,
+            ),
+        )
+
+        assertNull(f.focus.items.single().interruptReason)
+    }
+
+    @Test
     fun `countdown recovered hours later is capped to planned seconds`() = runBlocking {
         val f = Fixture()
         val start = at(day, 9, 0)
@@ -337,22 +378,32 @@ class FocusSessionUseCaseTest {
             return true
         }
 
-        override suspend fun updateCount(id: String, count: Int) {
+        override suspend fun updateCount(id: String, count: Int, at: Long) {
             val index = items.indexOfFirst { it.id == id }
-            if (index >= 0) items[index] = items[index].copy(count = count)
+            if (index >= 0) items[index] = items[index].copy(count = count, updatedAt = at)
         }
 
-        override suspend fun updateMeta(id: String, note: String?, mood: Int?) {
+        override suspend fun updateMeta(id: String, note: String?, mood: Int?, at: Long) {
             val index = items.indexOfFirst { it.id == id }
-            if (index >= 0) items[index] = items[index].copy(note = note, mood = mood)
+            if (index >= 0) items[index] = items[index].copy(note = note, mood = mood, updatedAt = at)
         }
 
         override suspend fun softDelete(id: String, at: Long) {
             val index = items.indexOfFirst { it.id == id }
-            if (index >= 0) items[index] = items[index].copy(deletedAt = at)
+            if (index >= 0) items[index] = items[index].copy(deletedAt = at, updatedAt = at)
         }
 
-        override suspend fun restoreAll(items: List<CheckIn>): MergeReport = MergeReport()
+        override suspend fun mergeAll(items: List<CheckIn>): MergeReport {
+            items.forEach { remote ->
+                val index = this.items.indexOfFirst { it.id == remote.id }
+                if (index < 0) {
+                    this.items += remote
+                } else if (remote.updatedAt > this.items[index].updatedAt) {
+                    this.items[index] = remote
+                }
+            }
+            return MergeReport()
+        }
     }
 
     private class FakeFocusRepository : FocusRepository {
@@ -361,16 +412,30 @@ class FocusSessionUseCaseTest {
         override fun observeAll(): Flow<List<FocusSession>> = flowOf(items.filter { it.deletedAt == null })
         override suspend fun all(): List<FocusSession> = items.toList()
         override suspend fun insert(session: FocusSession) { items += session }
-        override suspend fun updateNote(id: String, note: String?) {
+        override suspend fun updateNote(id: String, note: String?, at: Long) {
             val index = items.indexOfFirst { it.id == id }
-            if (index >= 0) items[index] = items[index].copy(note = note)
+            if (index >= 0) items[index] = items[index].copy(note = note, updatedAt = at)
         }
 
         override suspend fun softDelete(id: String, at: Long) {
             val index = items.indexOfFirst { it.id == id }
-            if (index >= 0) items[index] = items[index].copy(deletedAt = at)
+            if (index >= 0) items[index] = items[index].copy(deletedAt = at, updatedAt = at)
         }
 
-        override suspend fun restoreAll(items: List<FocusSession>): MergeReport = MergeReport()
+        override suspend fun mergeAll(items: List<FocusSession>): MergeReport {
+            items.forEach { remote ->
+                val index = this.items.indexOfFirst { it.id == remote.id }
+                if (index < 0) {
+                    this.items += remote
+                } else if (remote.updatedAt > this.items[index].updatedAt) {
+                    this.items[index] = remote
+                }
+            }
+            return MergeReport()
+        }
+
+        override suspend fun completedPomodorosOn(date: LocalDate): Int = items.count {
+            it.attributedDate == date && it.mode == "pomodoro" && it.completed && it.deletedAt == null
+        }
     }
 }

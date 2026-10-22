@@ -54,7 +54,7 @@ class SnapshotFactory @Inject constructor(
         val config = settings.current()
         val bundle = tasks.captureAll()
         return SyncSnapshot(
-            schemaVersion = 2,
+            schemaVersion = 3,
             deviceId = config.deviceId,
             exportedAt = clock.nowMillis(),
             tasks = bundle.tasks.map { it.toEntity() },
@@ -80,6 +80,7 @@ fun AppSettings.toDto() = SettingsDto(
     dndEnd = dndEnd,
     defaultFocusMinutes = defaultFocusMinutes,
     defaultBreakMinutes = defaultBreakMinutes,
+    longBreakMinutes = longBreakMinutes,
     ignoreShortFocus = ignoreShortFocus,
     strictMode = strictMode,
     countUpMode = countUpMode,
@@ -147,7 +148,7 @@ class SyncEngine @Inject constructor(
                 val snapshot = runCatching {
                     json.decodeFromString<SyncSnapshot>(bytes.toString(Charsets.UTF_8))
                 }.getOrElse { throw IllegalStateException("远端文件 ${file.name} 格式不正确，已停止以避免数据丢失") }
-                if (snapshot.schemaVersion > 2) throw IllegalStateException("远端备份版本过新，请升级 App")
+                if (snapshot.schemaVersion > 3) throw IllegalStateException("远端备份版本过新，请升级 App")
                 // 语义哈希：忽略每次都会变化的 exportedAt，数据没变就不重复合并
                 val hash = semanticHash(snapshot)
                 if (previous?.contentHash == hash) return@forEach
@@ -297,8 +298,8 @@ class SyncEngine @Inject constructor(
             .forEach { tasks.upsertHabitRule(it.toDomain()) }
         remote.goalRules.filter { it.taskId in localAfter.keys && it.taskId !in protectedIds }
             .forEach { tasks.upsertGoalRule(it.toDomain()) }
-        report += checkIns.restoreAll(remote.checkIns.map { it.toDomain() })
-        report += focus.restoreAll(remote.focusSessions.map { it.toDomain() })
+        report += checkIns.mergeAll(remote.checkIns.map { it.toDomain() })
+        report += focus.mergeAll(remote.focusSessions.map { it.toDomain() })
         report += reminders.restoreAll(remote.reminders.map { it.toDomain() })
         report += wishes.restoreAll(remote.wishes.map { it.toDomain() })
         report += badges.restoreAll(remote.badges.map { it.toDomain() })
@@ -320,6 +321,7 @@ class SyncEngine @Inject constructor(
                 dndEnd = dto.dndEnd,
                 defaultFocusMinutes = dto.defaultFocusMinutes.coerceIn(5, 180),
                 defaultBreakMinutes = dto.defaultBreakMinutes.coerceIn(5, 30),
+                longBreakMinutes = dto.longBreakMinutes.coerceIn(10, 60),
                 ignoreShortFocus = dto.ignoreShortFocus,
                 strictMode = dto.strictMode,
                 countUpMode = dto.countUpMode,

@@ -170,20 +170,23 @@ interface CheckInDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAllIgnore(entities: List<CheckInEntity>): List<Long>
 
-    @Query("UPDATE check_ins SET deletedAt = NULL, createdAt = :at, source = :source WHERE taskId = :taskId AND checkDate = :date AND isMakeup = :makeup")
+    @Query("UPDATE check_ins SET deletedAt = NULL, createdAt = :at, source = :source, updatedAt = MAX(updatedAt, :at) WHERE taskId = :taskId AND checkDate = :date AND isMakeup = :makeup")
     suspend fun reactivate(taskId: String, date: String, makeup: Boolean, at: Long, source: String): Int
 
-    @Query("UPDATE check_ins SET count = :count WHERE id = :id")
-    suspend fun updateCount(id: String, count: Int)
+    @Query("UPDATE check_ins SET count = :count, updatedAt = MAX(updatedAt, :at) WHERE id = :id")
+    suspend fun updateCount(id: String, count: Int, at: Long)
 
-    @Query("UPDATE check_ins SET note = :note, mood = :mood WHERE id = :id")
-    suspend fun updateMeta(id: String, note: String?, mood: Int?)
+    @Query("UPDATE check_ins SET note = :note, mood = :mood, updatedAt = MAX(updatedAt, :at) WHERE id = :id")
+    suspend fun updateMeta(id: String, note: String?, mood: Int?, at: Long)
 
-    @Query("UPDATE check_ins SET deletedAt = :at WHERE id = :id")
+    @Query("UPDATE check_ins SET deletedAt = :at, updatedAt = MAX(updatedAt, :at) WHERE id = :id")
     suspend fun softDelete(id: String, at: Long)
 
-    @Query("UPDATE check_ins SET deletedAt = :at WHERE deletedAt IS NULL")
+    @Query("UPDATE check_ins SET deletedAt = :at, updatedAt = MAX(updatedAt, :at) WHERE deletedAt IS NULL")
     suspend fun softDeleteAll(at: Long)
+
+    @Upsert
+    suspend fun upsertAll(entities: List<CheckInEntity>)
 }
 
 @Dao
@@ -206,14 +209,28 @@ interface FocusDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAllIgnore(entities: List<FocusSessionEntity>): List<Long>
 
-    @Query("UPDATE focus_sessions SET note = :note WHERE id = :id")
-    suspend fun updateNote(id: String, note: String?)
+    @Query("UPDATE focus_sessions SET note = :note, updatedAt = MAX(updatedAt, :at) WHERE id = :id")
+    suspend fun updateNote(id: String, note: String?, at: Long)
 
-    @Query("UPDATE focus_sessions SET deletedAt = :at WHERE id = :id")
+    @Query("UPDATE focus_sessions SET deletedAt = :at, updatedAt = MAX(updatedAt, :at) WHERE id = :id")
     suspend fun softDelete(id: String, at: Long)
 
-    @Query("UPDATE focus_sessions SET deletedAt = :at WHERE deletedAt IS NULL")
+    @Query("UPDATE focus_sessions SET deletedAt = :at, updatedAt = MAX(updatedAt, :at) WHERE deletedAt IS NULL")
     suspend fun softDeleteAll(at: Long)
+
+    @Upsert
+    suspend fun upsertAll(entities: List<FocusSessionEntity>)
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM focus_sessions
+        WHERE attributedDate = :date
+          AND deletedAt IS NULL
+          AND mode = 'pomodoro'
+          AND COALESCE(outcome, 'completed') = 'completed'
+        """,
+    )
+    suspend fun countCompletedPomodoros(date: String): Int
 }
 
 @Dao

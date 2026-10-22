@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -414,6 +416,62 @@ fun HourlyFocusChart(hours: List<HourBucket>, bestHour: Int?) {
             listOf("0", "6", "12", "18", "23").forEach { label ->
                 Text(
                     "${label}时",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 打断原因分布：对齐番茄ToDo 的「打断原因」统计。
+ * 只统计选中区间 + 当前任务筛选内 outcome=interrupted 的专注。
+ */
+@Composable
+fun InterruptReasonsCard(reasons: List<InterruptReasonCount>) {
+    Column {
+        Text(
+            "打断原因",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(6.dp))
+        if (reasons.isEmpty()) {
+            Text(
+                "暂无中断记录",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@Column
+        }
+        val max = reasons.maxOf { it.count }.coerceAtLeast(1)
+        reasons.forEach { row ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    row.label,
+                    modifier = Modifier.width(76.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(8.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(row.count.toFloat() / max)
+                            .fillMaxHeight()
+                            .background(Tomato.copy(alpha = 0.72f), RoundedCornerShape(4.dp)),
+                    )
+                }
+                Text(
+                    "${row.count} 次",
+                    modifier = Modifier.padding(start = 8.dp),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -6,6 +6,14 @@ import java.time.ZoneId
 
 enum class TaskType { HABIT, POMODORO, GOAL, TODO }
 
+/** 中断原因：与番茄ToDo 的「打断原因」统计对齐；null 表示旧数据未记录。 */
+enum class InterruptReason(val label: String) {
+    DISTRACTED("分心了"),
+    INTERRUPTED("被外界打断"),
+    GAVE_UP("主动放弃"),
+    OTHER("其它"),
+}
+
 /**
  * v1.6 起不再有 ARCHIVED：任务只有「进行中 / 已完成」两种状态。
  * 删除是独立维度（Task.deletedAt 软删除），历史打卡与专注记录继续保留。
@@ -78,6 +86,8 @@ data class CheckIn(
     val isMakeup: Boolean = false,
     val createdAt: Long,
     val deletedAt: Long? = null,
+    /** v1.8：跨设备合并用的记录级时间戳。旧数据回填为 createdAt。 */
+    val updatedAt: Long = 0L,
 )
 
 data class FocusSession(
@@ -98,6 +108,10 @@ data class FocusSession(
     val attributedDate: LocalDate? = null,
     /** 由本次专注自动写入的打卡 id，便于回溯。 */
     val checkInId: String? = null,
+    /** v1.8：中断原因（InterruptReason.name），仅 outcome=interrupted 时有值。 */
+    val interruptReason: String? = null,
+    /** v1.8：跨设备合并用的记录级时间戳。旧数据回填为 endedAt。 */
+    val updatedAt: Long = 0L,
 ) {
     val completed: Boolean get() = outcome != "interrupted" && actualSeconds > 0
 }
@@ -136,6 +150,8 @@ data class AppSettings(
     val dndEnd: String = "07:00",
     val defaultFocusMinutes: Int = 25,
     val defaultBreakMinutes: Int = 5,
+    /** 每 4 个番茄后的长休息时长。 */
+    val longBreakMinutes: Int = 15,
     val ignoreShortFocus: Boolean = true,
     val strictMode: Boolean = false,
     val countUpMode: Boolean = false,

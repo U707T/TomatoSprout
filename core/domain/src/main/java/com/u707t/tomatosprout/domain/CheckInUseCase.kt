@@ -44,7 +44,7 @@ class CheckInUseCase @Inject constructor(
         val existing = checkIns.forTask(task.id).filter { it.date == today && it.deletedAt == null }
         val current = existing.firstOrNull()
         if (current != null && rule != null && current.count < target) {
-            checkIns.updateCount(current.id, current.count + 1)
+            checkIns.updateCount(current.id, current.count + 1, now)
             val newBadges = runCatching { badges.refresh() }.getOrDefault(emptyList())
             return CheckInResult.Checked(streakOf(rule, today), newBadges)
         }
@@ -79,7 +79,7 @@ class CheckInUseCase @Inject constructor(
             written = created != null
             id = created?.id
         } else if (rule != null && current.count < target) {
-            checkIns.updateCount(current.id, current.count + 1)
+            checkIns.updateCount(current.id, current.count + 1, at)
             written = true
         }
         // 计时完成只写打卡，不自动把任务标成完成；完成动作由用户在长按面板确认
@@ -107,7 +107,7 @@ class CheckInUseCase @Inject constructor(
     }
 
     suspend fun updateMeta(checkInId: String, note: String?, mood: Int?) {
-        checkIns.updateMeta(checkInId, note?.takeIf { it.isNotBlank() }, mood)
+        checkIns.updateMeta(checkInId, note?.takeIf { it.isNotBlank() }, mood, clock.nowMillis())
     }
 
     private suspend fun streakOf(rule: HabitRule, today: LocalDate): Int =
@@ -142,6 +142,7 @@ class CheckInUseCase @Inject constructor(
             source = source,
             isMakeup = isMakeup,
             createdAt = now,
+            updatedAt = now,
         )
         val inserted = checkIns.insert(candidate)
         if (!inserted) return null

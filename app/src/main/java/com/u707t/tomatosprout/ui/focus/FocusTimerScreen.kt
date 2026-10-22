@@ -431,6 +431,7 @@ fun FocusTimerScreen(
             confirm = it,
             onCancel = viewModel::cancelStop,
             onConfirm = viewModel::confirmStop,
+            onReason = viewModel::setStopReason,
         )
     }
 
@@ -438,10 +439,11 @@ fun FocusTimerScreen(
         SessionSummaryDialog(
             summary = it,
             breakMinutes = ui.breakMinutes,
+            longBreakMinutes = ui.settings.longBreakMinutes,
             onDismiss = viewModel::dismissSummary,
-            onStartBreak = {
+            onStartBreak = { long ->
                 viewModel.dismissSummary()
-                viewModel.startBreak()
+                viewModel.startBreak(long)
             },
             onStartAgain = {
                 viewModel.dismissSummary()

@@ -33,6 +33,8 @@ data class FocusSettlementInput(
     /** 正向计时不足 30 秒时是否直接丢弃。 */
     val ignoreShortFocus: Boolean = true,
     val reason: FocusEndReason,
+    /** 手动停止时的中断原因；完成/丢弃时忽略。 */
+    val interruptReason: InterruptReason? = null,
 )
 
 data class FocusSettlementResult(
@@ -47,6 +49,7 @@ data class FocusSettlementResult(
     val newBadges: List<Badge> = emptyList(),
     val attributedDate: LocalDate,
     val interrupted: Boolean = false,
+    val interruptReason: String? = null,
 )
 
 /**
@@ -136,6 +139,8 @@ class FocusSessionUseCase @Inject constructor(
             outcome = outcome,
             attributedDate = attributedDate,
             checkInId = checkIn?.checkInId,
+            interruptReason = input.interruptReason?.name?.takeIf { !completed },
+            updatedAt = endedAt,
         )
         focus.insert(session)
 
@@ -158,6 +163,7 @@ class FocusSessionUseCase @Inject constructor(
             newBadges = merged,
             attributedDate = attributedDate,
             interrupted = !completed,
+            interruptReason = session.interruptReason,
         )
     }
 }

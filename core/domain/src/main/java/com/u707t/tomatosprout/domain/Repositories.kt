@@ -1,6 +1,7 @@
 package com.u707t.tomatosprout.domain
 
 import kotlinx.coroutines.flow.Flow
+import java.time.LocalDate
 
 data class TaskBundle(
     val tasks: List<Task> = emptyList(),
@@ -52,19 +53,26 @@ interface CheckInRepository {
     suspend fun all(): List<CheckIn>
     suspend fun forTask(taskId: String): List<CheckIn>
     suspend fun insert(checkIn: CheckIn): Boolean
-    suspend fun updateCount(id: String, count: Int)
-    suspend fun updateMeta(id: String, note: String?, mood: Int?)
+    suspend fun updateCount(id: String, count: Int, at: Long)
+    suspend fun updateMeta(id: String, note: String?, mood: Int?, at: Long)
     suspend fun softDelete(id: String, at: Long)
-    suspend fun restoreAll(items: List<CheckIn>): MergeReport
+
+    /** 记录级合并：远端 updatedAt 更新才覆盖本地；同一天多次打卡取较大 count。 */
+    suspend fun mergeAll(items: List<CheckIn>): MergeReport
 }
 
 interface FocusRepository {
     fun observeAll(): Flow<List<FocusSession>>
     suspend fun all(): List<FocusSession>
     suspend fun insert(session: FocusSession)
-    suspend fun updateNote(id: String, note: String?)
+    suspend fun updateNote(id: String, note: String?, at: Long)
     suspend fun softDelete(id: String, at: Long)
-    suspend fun restoreAll(items: List<FocusSession>): MergeReport
+
+    /** 记录级合并：远端 updatedAt 更新才覆盖本地。 */
+    suspend fun mergeAll(items: List<FocusSession>): MergeReport
+
+    /** 某归属日完成的番茄数（只算 mode=pomodoro 且 completed），用于长休息节奏。 */
+    suspend fun completedPomodorosOn(date: LocalDate): Int
 }
 
 interface BadgeRepository {

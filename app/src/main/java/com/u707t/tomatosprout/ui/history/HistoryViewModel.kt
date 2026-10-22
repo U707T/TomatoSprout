@@ -8,6 +8,7 @@ import com.u707t.tomatosprout.domain.CheckInResult
 import com.u707t.tomatosprout.domain.CheckInUseCase
 import com.u707t.tomatosprout.domain.FocusRepository
 import com.u707t.tomatosprout.domain.HabitSchedule
+import com.u707t.tomatosprout.domain.InterruptReason
 import com.u707t.tomatosprout.domain.StatsData
 import com.u707t.tomatosprout.domain.StatsUseCase
 import com.u707t.tomatosprout.domain.TaskDisplay
@@ -47,6 +48,7 @@ data class HistoryRecordUi(
     val mood: Int?,
     val isMakeup: Boolean,
     val interrupted: Boolean,
+    val interruptReason: String?,
     val atMillis: Long,
 )
 
@@ -117,6 +119,9 @@ class HistoryViewModel @Inject constructor(
                 val deleted = session.taskId != null && TaskDisplay.isDeleted(task)
                 val start = Instant.ofEpochMilli(session.startedAt).atZone(zone)
                 val end = Instant.ofEpochMilli(session.endedAt).atZone(zone)
+                val reasonLabel = session.interruptReason?.let { raw ->
+                    runCatching { InterruptReason.valueOf(raw).label }.getOrDefault(raw)
+                }
                 HistoryRecordUi(
                     id = session.id,
                     kind = "focus",
@@ -126,13 +131,18 @@ class HistoryViewModel @Inject constructor(
                     color = task?.color ?: 0xFFFF6B6B,
                     startLabel = start.format(HISTORY_TIME),
                     endLabel = end.format(HISTORY_TIME),
-                    statusLabel = if (session.outcome == "interrupted") "中断" else "已完成",
+                    statusLabel = when {
+                        session.outcome != "interrupted" -> "已完成"
+                        reasonLabel != null -> "中断 · $reasonLabel"
+                        else -> "中断"
+                    },
                     durationSeconds = session.actualSeconds,
                     plannedSeconds = session.plannedSeconds,
                     note = session.note,
                     mood = null,
                     isMakeup = false,
                     interrupted = session.outcome == "interrupted",
+                    interruptReason = reasonLabel,
                     atMillis = session.endedAt,
                 )
             }
@@ -162,6 +172,7 @@ class HistoryViewModel @Inject constructor(
                     mood = check.mood,
                     isMakeup = check.isMakeup,
                     interrupted = false,
+                    interruptReason = null,
                     atMillis = check.createdAt,
                 )
             }
@@ -222,7 +233,7 @@ class HistoryViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 if (record.kind == "focus") {
-                    focusRepo.updateNote(record.id, note.takeIf { it.isNotBlank() })
+                    focusRepo.updateNote(record.id, note.takeIf { it.isNotBlank() }, clock.nowMillis())
                 } else {
                     checkIn.updateMeta(record.id, note.takeIf { it.isNotBlank() }, record.mood)
                 }

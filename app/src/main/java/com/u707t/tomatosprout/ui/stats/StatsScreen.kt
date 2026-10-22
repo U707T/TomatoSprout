@@ -183,6 +183,11 @@ private fun StatsContent(
                 HourlyFocusChart(dashboard.hours, dashboard.bestHour)
             }
         }
+        item(key = "interrupts") {
+            SoftCard {
+                InterruptReasonsCard(dashboard.interruptReasons)
+            }
+        }
         item(key = "streak") {
             SoftCard {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

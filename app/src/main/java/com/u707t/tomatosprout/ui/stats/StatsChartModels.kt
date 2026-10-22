@@ -29,6 +29,11 @@ data class HourBucket(
     val seconds: Long,
 )
 
+data class InterruptReasonCount(
+    val label: String,
+    val count: Int,
+)
+
 data class StatsDashboard(
     val selectedDate: LocalDate,
     val range: DistributionRange,
@@ -47,4 +52,5 @@ data class StatsDashboard(
     val hasFocusData: Boolean,
     val hours: List<HourBucket> = emptyList(),
     val bestHour: Int? = null,
+    val interruptReasons: List<InterruptReasonCount> = emptyList(),
 )

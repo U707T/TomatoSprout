@@ -84,6 +84,8 @@ data class CheckInEntity(
     val isMakeup: Boolean = false,
     val createdAt: Long = 0L,
     val deletedAt: Long? = null,
+    /** v5：记录级合并时间戳。旧数据回填为 createdAt。 */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
 )
 
 @Serializable
@@ -109,6 +111,10 @@ data class FocusSessionEntity(
     val attributedDate: String? = null,
     /** 自动写入的打卡 id；v3 新增。 */
     val checkInId: String? = null,
+    /** v5：中断原因（InterruptReason.name）。 */
+    val interruptReason: String? = null,
+    /** v5：记录级合并时间戳。旧数据回填为 endedAt。 */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
 )
 
 @Serializable
