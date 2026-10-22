@@ -159,6 +159,8 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val simpleMode: Boolean = false,
     val notificationsEnabled: Boolean = true,
+    /** 专注时是否使用系统实时活动 / 澎湃 OS 超级岛；仅本机生效，不参与同步与备份。 */
+    val liveActivityEnabled: Boolean = true,
     val dndEnabled: Boolean = false,
     val dndStart: String = "22:00",
     val dndEnd: String = "07:00",

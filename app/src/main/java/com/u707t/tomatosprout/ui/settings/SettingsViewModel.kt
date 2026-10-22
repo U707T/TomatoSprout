@@ -45,6 +45,7 @@ class SettingsViewModel @Inject constructor(
     fun setTheme(mode: ThemeMode) = update { it.copy(themeMode = mode) }
     fun setSimple(enabled: Boolean) = update { it.copy(simpleMode = enabled) }
     fun setNotifications(enabled: Boolean) = update { it.copy(notificationsEnabled = enabled) }
+    fun setLiveActivity(enabled: Boolean) = update { it.copy(liveActivityEnabled = enabled) }
     fun setDnd(enabled: Boolean) = update { it.copy(dndEnabled = enabled) }
     fun setDndStart(value: String) = update { it.copy(dndStart = value) }
     fun setDndEnd(value: String) = update { it.copy(dndEnd = value) }

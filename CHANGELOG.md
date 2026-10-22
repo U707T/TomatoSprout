@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.10.0 — Android 16 与澎湃 OS 超级岛
+
+- **targetSdk 35 → 36**：逐条核对 Android 16 行为变更（edge-to-edge 不可 opt-out、预测式返回默认开启且 `onBackPressed` 不再回调、大屏忽略方向 / 尺寸限制、JobScheduler 配额、16 KB page size、自动主题图标）；本工程均已满足，核对表见 `docs/v1.10.0-实时活动与超级岛.md`
+- **澎湃 OS 超级岛 / 焦点通知**：专注进行中把倒计时交给系统 —— 小岛（番茄图标）+ 展开大岛（大号等宽数字 + 进度环）+ 息屏文案 + 通知里的暂停 / 结束；只下发「结束时刻 + 当前时刻」，秒数由 SystemUI 自己走
+- **Android 16 实时更新**：非小米的 API 36+ 设备改用 `Notification.ProgressStyle` + chronometer，并在 36.1+ 申请常驻提升；用户未允许提升时退回自绘卡片，不发半吊子的系统样式
+- **能力探测**：读 `Settings.System["notification_focus_protocol"]` 与 `canShowFocus`；只有「明确关闭」才停用，查不到仍尝试，任何 ROM 差异最多降级成普通卡片；不新增权限、不引入小米 SDK、不反射系统属性
+- **节流**：实时活动档位改为 10 秒内容指纹 + 60 秒同内容兜底重发，跨进程 `notify()` 次数比 v1.9 少 60%～90%
+- **设置**：提醒组新增「实时活动 / 超级岛」开关（本机显示偏好，不参与 WebDAV 同步与 JSON 备份）与「系统实时活动」状态行（未开启可跳系统设置）
+- **测试**：新增 8 个超级岛载荷用例（倒计时绝对时刻、暂停不带 timerInfo、进度夹取 0..100、正计时不带 timerTotal、ticker 截断与空标题兜底）
+- **验证**：`:app:testDebugUnitTest` 13、`:app:lintDebug` 0 error、`:app:assembleDebug`；APK 内 arm64 so 的 LOAD 段 `p_align = 0x4000`（16 KB 页已是兼容的）
+
 ## v1.9.4 — 专注声音无缝循环与电平修复
 
 - **白 / 棕噪音无缝化**：原始 8 秒素材开头 0.46s 淡入、结尾 0.5s 淡出，`isLooping = true` 时每 8 秒音量塌陷一次；裁掉头尾后做 0.25s 等功率交叉淡化，循环接点波形连续

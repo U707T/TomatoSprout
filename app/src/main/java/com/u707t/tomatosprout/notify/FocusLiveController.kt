@@ -1,92 +1,51 @@
 package com.u707t.tomatosprout.notify
 
 import android.annotation.SuppressLint
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.widget.RemoteViews
-import androidx.core.app.NotificationCompat
+import android.os.SystemClock
 import androidx.core.app.NotificationManagerCompat
 import com.u707t.tomatosprout.MainActivity
-import com.u707t.tomatosprout.R
-import com.u707t.tomatosprout.domain.TimerEngine
-import com.u707t.tomatosprout.domain.TimerMode
-import com.u707t.tomatosprout.domain.TimerPhase
 import com.u707t.tomatosprout.domain.TimerState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 安卓「灵动岛」效果的唯一实现：高优先级通知 + 自定义 RemoteViews。
- * 仅使用系统通知与自定义 RemoteViews，遵守权限最小化。
- * 通知权限被拒绝时整体静默关闭。
+ * 专注「实时活动」的唯一出口。
+ *
+ * 具体用澎湃 OS 超级岛、Android 16 进度型通知，还是自定义 RemoteViews 卡片，
+ * 由 [FocusLiveNotification] 按机型能力决定；这里只负责节流与真正发通知。
+ *
+ * 节流的意义：系统实时活动/超级岛自己会走秒，不需要每秒重发；
+ * 只有普通卡片必须逐秒刷新文字。
  */
 @Singleton
 class FocusLiveController @Inject constructor(@ApplicationContext private val context: Context) {
 
+    private val builder = FocusLiveNotification(context)
+    private var lastKey: String? = null
+    private var lastPostedAtMono = 0L
+
     @SuppressLint("MissingPermission") // 已通过 NotificationPermission.canPost 显式校验
-    fun update(state: TimerState, nowMono: Long, title: String) {
+    fun update(state: TimerState, nowMono: Long, title: String, richSurface: Boolean = true) {
         if (!NotificationPermission.canPost(context)) return
-        val views = RemoteViews(context.packageName, R.layout.notification_focus)
-        val elapsed = state.elapsedSeconds(nowMono)
-        val displaySeconds = when (state.mode) {
-            TimerMode.COUNTDOWN -> (state.remainingMillis(nowMono) / 1000L).toInt()
-            TimerMode.COUNTUP -> elapsed
-        }
-        val progress = if (state.plannedSeconds <= 0) 0 else {
-            ((elapsed.toFloat() / state.plannedSeconds) * 100f).toInt().coerceIn(0, 100)
-        }
-        views.setTextViewText(R.id.focus_title, title.ifBlank { if (state.isBreak) "休息一下" else "专注中" })
-        views.setTextViewText(R.id.focus_time, TimerEngine.formatClock(displaySeconds.toLong()))
-        views.setProgressBar(R.id.focus_progress, 100, progress, false)
-        views.setImageViewResource(
-            R.id.focus_toggle,
-            if (state.phase == TimerPhase.PAUSED) R.drawable.ic_play else R.drawable.ic_pause,
-        )
-        views.setOnClickPendingIntent(R.id.focus_toggle, action(FocusActionReceiver.ACTION_TOGGLE, 1))
-        views.setOnClickPendingIntent(R.id.focus_stop, action(FocusActionReceiver.ACTION_STOP, 2))
-
-        val builder = NotificationCompat.Builder(context, NotificationChannels.CHANNEL_FOCUS)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title.ifBlank { "专注中" })
-            .setContentText(TimerEngine.formatClock(displaySeconds.toLong()))
-            .setCustomContentView(views)
-            .setCustomBigContentView(views)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setSilent(true)
-            .setShowWhen(false)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
-            .setContentIntent(ContentIntents.openApp(context, MainActivity.NAV_FOCUS))
-
-        runCatching {
-            NotificationManagerCompat.from(context)
-                .notify(NotificationIds.FOCUS_LIVE, builder.build())
+        val built = runCatching { builder.build(state, nowMono, title, richSurface) }.getOrNull() ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (built.key == lastKey && now - lastPostedAtMono < built.minIntervalMillis) return
+        val posted = runCatching {
+            NotificationManagerCompat.from(context).notify(NotificationIds.FOCUS_LIVE, built.notification)
+        }.isSuccess
+        if (posted) {
+            lastKey = built.key
+            lastPostedAtMono = now
         }
     }
 
     fun cancel() {
         runCatching { NotificationManagerCompat.from(context).cancel(NotificationIds.FOCUS_LIVE) }
-    }
-
-    /**
-     * 直接用 Activity PendingIntent：Android 12+ 限制通知 trampoline（广播/服务里拉起 Activity），
-     * 用广播再 startActivity 会被系统拦截。
-     */
-    private fun action(action: String, request: Int): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra(MainActivity.EXTRA_NAVIGATE, MainActivity.NAV_FOCUS)
-            putExtra(MainActivity.EXTRA_FOCUS_ACTION, action)
-        }
-        return PendingIntent.getActivity(
-            context,
-            request,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        lastKey = null
+        lastPostedAtMono = 0L
     }
 }
 

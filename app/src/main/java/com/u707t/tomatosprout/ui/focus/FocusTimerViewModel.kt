@@ -103,6 +103,7 @@ class FocusTimerViewModel @Inject constructor(
         taskId = { sessionTask?.id ?: selectedTask.value },
         taskTitle = { sessionTask?.title ?: "自由专注" },
         notificationsEnabled = { settings.value.notificationsEnabled },
+        richSurface = { settings.value.liveActivityEnabled },
         onCountdownFinished = { settle(FocusEndReason.COUNTDOWN_FINISHED) },
         onCommandPoll = { consumePendingCommand() },
     )

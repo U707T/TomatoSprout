@@ -38,9 +38,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.BuildConfig
 import com.u707t.tomatosprout.domain.ThemeMode
+import com.u707t.tomatosprout.notify.LiveActivityStatus
 import com.u707t.tomatosprout.ui.components.ConfirmDialog
 import com.u707t.tomatosprout.ui.components.GroupDivider
 import com.u707t.tomatosprout.ui.components.LargeHeader
@@ -174,6 +176,29 @@ fun SettingsScreen(
                         "关闭后打卡与计时不受影响，只是不再提醒",
                         settings.notificationsEnabled,
                         viewModel::setNotifications,
+                    )
+                    GroupDivider()
+                    // 从系统设置页回来时要重新读一次授权状态，所以挂在 resume 上
+                    var liveActivity by remember {
+                        mutableStateOf(LiveActivityStatus.describe(context, settings.liveActivityEnabled))
+                    }
+                    LifecycleResumeEffect(settings.liveActivityEnabled) {
+                        liveActivity = LiveActivityStatus.describe(context, settings.liveActivityEnabled)
+                        onPauseOrDispose { }
+                    }
+                    SwitchRow(
+                        "实时活动 / 超级岛",
+                        "专注时在状态栏、锁屏与澎湃 OS 超级岛上显示倒计时",
+                        settings.liveActivityEnabled,
+                        viewModel::setLiveActivity,
+                    )
+                    GroupDivider()
+                    SettingRow(
+                        title = "系统实时活动",
+                        subtitle = liveActivity.summary,
+                        onClick = liveActivity.settingsIntent?.let { intent ->
+                            { runCatching { context.startActivity(intent) } }
+                        },
                     )
                     GroupDivider()
                     SwitchRow("免打扰时段", "该时段内不发送提醒", settings.dndEnabled, viewModel::setDnd)

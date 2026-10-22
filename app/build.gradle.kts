@@ -29,9 +29,9 @@ android {
     defaultConfig {
         applicationId = "com.u707t.tomatosprout"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 18
-        versionName = "1.9.4"
+        targetSdk = 36
+        versionCode = 19
+        versionName = "1.10.0"
         vectorDrawables { useSupportLibrary = true }
     }
 

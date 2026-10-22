@@ -35,6 +35,8 @@ class FocusTimerController(
     private val taskId: () -> String?,
     private val taskTitle: () -> String,
     private val notificationsEnabled: () -> Boolean,
+    /** 是否允许使用系统实时活动 / 超级岛；关闭后只发普通通知卡片。 */
+    private val richSurface: () -> Boolean,
     private val onCountdownFinished: () -> Unit,
     private val onCommandPoll: () -> Unit,
 ) {
@@ -232,6 +234,11 @@ class FocusTimerController(
             live.cancel()
             return
         }
-        live.update(state, nowMono, if (state.isBreak) "休息一下" else taskTitle())
+        live.update(
+            state = state,
+            nowMono = nowMono,
+            title = if (state.isBreak) "休息一下" else taskTitle(),
+            richSurface = richSurface(),
+        )
     }
 }
