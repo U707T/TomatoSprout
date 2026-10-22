@@ -115,5 +115,6 @@ class TaskUseCaseTest {
         override suspend fun deleteForParent(parentId: String) = Unit
         override suspend fun insertAllIgnore(items: List<SubTask>): MergeReport = MergeReport()
         override suspend fun insertAll(items: List<SubTask>) = Unit
+        override suspend fun mergeAll(items: List<SubTask>): MergeReport = MergeReport()
     }
 }

@@ -6,10 +6,9 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * 数据库版本 5（v1.8）：
- * - check_ins / focus_sessions 增加 updatedAt，用于记录级双向合并；
- * - focus_sessions 增加 interruptReason，记录中断原因；
- * - 旧数据的 updatedAt 分别回填为 createdAt / endedAt；
+ * 数据库版本 6（v1.8.1）：
+ * - subtasks 增加 updatedAt，子任务标题 / 完成状态可以双向合并；
+ * - check_ins / focus_sessions 的记录级 updatedAt 与 interruptReason 沿用 v5；
  * - 打卡与专注仍然只做软删除，删除任务不会级联删除历史。
  *
  * 版本演进规则：
@@ -31,7 +30,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncManifestEntity::class,
         SyncLogEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -144,6 +143,15 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE focus_sessions ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("UPDATE focus_sessions SET updatedAt = endedAt WHERE updatedAt = 0")
                 db.execSQL("ALTER TABLE focus_sessions ADD COLUMN interruptReason TEXT")
+            }
+        }
+        /**
+         * v5 → v6：子任务增加记录级 updatedAt，旧数据回填 createdAt。
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE subtasks ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE subtasks SET updatedAt = createdAt WHERE updatedAt = 0")
             }
         }
     }

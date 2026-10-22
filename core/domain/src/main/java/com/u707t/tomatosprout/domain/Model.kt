@@ -55,6 +55,8 @@ data class SubTask(
     val done: Boolean = false,
     val sortOrder: Int = 0,
     val createdAt: Long = 0L,
+    /** v6：跨设备合并用的记录级时间戳。旧数据回填为 createdAt。 */
+    val updatedAt: Long = 0L,
 )
 
 data class HabitRule(

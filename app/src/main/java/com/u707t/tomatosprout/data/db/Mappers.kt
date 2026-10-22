@@ -62,9 +62,9 @@ fun Task.toEntity() = TaskEntity(
     focusMinutes = focusMinutes,
 )
 
-fun SubTaskEntity.toDomain() = SubTask(id, parentTaskId, title, done, sortOrder, createdAt)
+fun SubTaskEntity.toDomain() = SubTask(id, parentTaskId, title, done, sortOrder, createdAt, updatedAt)
 
-fun SubTask.toEntity() = SubTaskEntity(id, parentTaskId, title, done, sortOrder, createdAt)
+fun SubTask.toEntity() = SubTaskEntity(id, parentTaskId, title, done, sortOrder, createdAt, updatedAt)
 
 fun HabitRuleEntity.toDomain() = HabitRule(
     taskId = taskId,

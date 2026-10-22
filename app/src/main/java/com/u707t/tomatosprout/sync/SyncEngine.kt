@@ -3,6 +3,7 @@ package com.u707t.tomatosprout.sync
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import androidx.room.withTransaction
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -12,6 +13,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.hilt.work.HiltWorker
+import com.u707t.tomatosprout.data.db.AppDatabase
 import com.u707t.tomatosprout.data.db.SyncLogEntity
 import com.u707t.tomatosprout.data.db.SyncManifestEntity
 import com.u707t.tomatosprout.data.db.SyncDao
@@ -19,12 +21,14 @@ import com.u707t.tomatosprout.data.db.toDomain
 import com.u707t.tomatosprout.data.db.toEntity
 import com.u707t.tomatosprout.domain.AppClock
 import com.u707t.tomatosprout.domain.AppSettings
+import com.u707t.tomatosprout.domain.BadgeRefresher
 import com.u707t.tomatosprout.domain.BadgeRepository
 import com.u707t.tomatosprout.domain.CheckInRepository
 import com.u707t.tomatosprout.domain.FocusRepository
 import com.u707t.tomatosprout.domain.MergeReport
 import com.u707t.tomatosprout.domain.ReminderRepository
 import com.u707t.tomatosprout.domain.SettingsRepository
+import com.u707t.tomatosprout.domain.SubTaskRepository
 import com.u707t.tomatosprout.domain.TaskBundle
 import com.u707t.tomatosprout.domain.TaskRepository
 import com.u707t.tomatosprout.domain.WishRepository
@@ -54,7 +58,7 @@ class SnapshotFactory @Inject constructor(
         val config = settings.current()
         val bundle = tasks.captureAll()
         return SyncSnapshot(
-            schemaVersion = 3,
+            schemaVersion = 4,
             deviceId = config.deviceId,
             exportedAt = clock.nowMillis(),
             tasks = bundle.tasks.map { it.toEntity() },
@@ -92,14 +96,17 @@ class SyncEngine @Inject constructor(
     @ApplicationContext private val context: Context,
     private val client: WebDavClient,
     private val tasks: TaskRepository,
+    private val subTasks: SubTaskRepository,
     private val checkIns: CheckInRepository,
     private val focus: FocusRepository,
     private val badges: BadgeRepository,
+    private val badgeRefresher: BadgeRefresher,
     private val reminders: ReminderRepository,
     private val wishes: WishRepository,
     private val settings: SettingsRepository,
     private val syncDao: SyncDao,
     private val snapshots: SnapshotFactory,
+    private val db: AppDatabase,
     private val clock: AppClock,
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = false }
@@ -148,7 +155,7 @@ class SyncEngine @Inject constructor(
                 val snapshot = runCatching {
                     json.decodeFromString<SyncSnapshot>(bytes.toString(Charsets.UTF_8))
                 }.getOrElse { throw IllegalStateException("远端文件 ${file.name} 格式不正确，已停止以避免数据丢失") }
-                if (snapshot.schemaVersion > 3) throw IllegalStateException("远端备份版本过新，请升级 App")
+                if (snapshot.schemaVersion > 4) throw IllegalStateException("远端备份版本过新，请升级 App")
                 // 语义哈希：忽略每次都会变化的 exportedAt，数据没变就不重复合并
                 val hash = semanticHash(snapshot)
                 if (previous?.contentHash == hash) return@forEach
@@ -158,18 +165,23 @@ class SyncEngine @Inject constructor(
                         latestSettings = remoteSettings
                     }
                 }
-                val report = merge(snapshot, lastSync, started)
+                // 合并 + manifest 写入放在同一个 Room 事务里：
+                // 中途异常会整体回滚，重试不会留下半合并数据。
+                val report = db.withTransaction {
+                    val merged = merge(snapshot, lastSync, started)
+                    syncDao.upsertManifest(
+                        SyncManifestEntity(
+                            deviceId = local.deviceId,
+                            fileName = file.name,
+                            contentHash = hash,
+                            remoteEtag = file.etag,
+                            lastSyncedAt = started,
+                        ),
+                    )
+                    merged
+                }
                 totalItems += report.inserted + report.updated
                 totalConflicts += report.conflicts
-                syncDao.upsertManifest(
-                    SyncManifestEntity(
-                        deviceId = local.deviceId,
-                        fileName = file.name,
-                        contentHash = hash,
-                        remoteEtag = file.etag,
-                        lastSyncedAt = started,
-                    ),
-                )
             }
 
             // 设置也参与同步：仅采用下载文件中较新的一份，凭据类字段始终留在本机
@@ -179,6 +191,8 @@ class SyncEngine @Inject constructor(
 
             // 合并后按专注记录重算番茄账本，避免各设备 +1 后互相覆盖造成漂移
             tasks.recountCompletedPomos()
+            // 远端数据也会解锁徽章；同步完成后主动评估一次
+            runCatching { badgeRefresher.refresh() }
 
             // 合并后把本地快照推回自己的文件
             val snapshot = snapshots.create()
@@ -247,7 +261,8 @@ class SyncEngine @Inject constructor(
                 remoteChanged && localChanged -> {
                     // 双方都改过：保留本地版本，远端版本另存为冲突副本
                     if (r.deletedAt == null) {
-                        val copyId = UUID.randomUUID().toString()
+                        // 确定性 id：同一远端版本重试时不会生成第二份副本
+                        val copyId = "conflict-${r.id}-${r.updatedAt}"
                         val copy = r.copy(
                             id = copyId,
                             title = r.title + "（冲突副本）",
@@ -255,7 +270,8 @@ class SyncEngine @Inject constructor(
                             createdAt = now,
                             updatedAt = now,
                         )
-                        tasks.upsert(copy.toDomain())
+                        // insertIgnore：副本已存在时保持原样，重试幂等
+                        tasks.restoreAll(TaskBundle(tasks = listOf(copy.toDomain())), overwrite = false)
                         // 冲突副本必须带上自己的规则，否则会变成一条没有习惯/目标/提醒的裸任务
                         remote.habitRules.firstOrNull { it.taskId == r.id }?.let {
                             tasks.upsertHabitRule(it.copy(taskId = copyId).toDomain())
@@ -265,17 +281,23 @@ class SyncEngine @Inject constructor(
                         }
                         remote.reminders.firstOrNull { it.taskId == r.id }?.let {
                             reminders.upsert(
-                                it.copy(id = UUID.randomUUID().toString(), taskId = copyId).toDomain(),
+                                it.copy(
+                                    id = "conflict-rem-${it.id}-${r.updatedAt}",
+                                    taskId = copyId,
+                                ).toDomain(),
                             )
                         }
                         val childCopies = remote.subTasks
                             .filter { it.parentTaskId == r.id }
-                            .map { it.copy(id = UUID.randomUUID().toString(), parentTaskId = copyId) }
+                            .map {
+                                it.copy(
+                                    id = "conflict-sub-${it.id}-${r.updatedAt}",
+                                    parentTaskId = copyId,
+                                    updatedAt = now,
+                                )
+                            }
                         if (childCopies.isNotEmpty()) {
-                            tasks.restoreAll(
-                                TaskBundle(subTasks = childCopies.map { it.toDomain() }),
-                                overwrite = false,
-                            )
+                            subTasks.mergeAll(childCopies.map { it.toDomain() })
                         }
                     }
                     report += MergeReport(conflicts = 1)
@@ -290,9 +312,8 @@ class SyncEngine @Inject constructor(
         val protectedIds = MergePolicy.protectedTaskIds(localTasks.values, lastSync)
         val localAfter = tasks.captureAll().tasks.associateBy { it.id }
         val validTaskIds = localAfter.keys
-        tasks.restoreAll(
-            TaskBundle(subTasks = remote.subTasks.filter { it.parentTaskId in validTaskIds }.map { it.toDomain() }),
-            overwrite = false,
+        report += subTasks.mergeAll(
+            remote.subTasks.filter { it.parentTaskId in validTaskIds }.map { it.toDomain() },
         )
         remote.habitRules.filter { it.taskId in validTaskIds && it.taskId !in protectedIds }
             .forEach { tasks.upsertHabitRule(it.toDomain()) }

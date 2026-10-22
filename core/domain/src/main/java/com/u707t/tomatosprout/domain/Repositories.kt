@@ -20,6 +20,9 @@ interface SubTaskRepository {
     suspend fun deleteForParent(parentId: String)
     suspend fun insertAllIgnore(items: List<SubTask>): MergeReport
     suspend fun insertAll(items: List<SubTask>)
+
+    /** 记录级合并：远端 updatedAt 更新才覆盖本地标题 / 完成状态 / 排序。 */
+    suspend fun mergeAll(items: List<SubTask>): MergeReport
 }
 
 interface TaskRepository {

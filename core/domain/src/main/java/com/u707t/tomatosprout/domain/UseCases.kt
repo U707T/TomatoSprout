@@ -37,6 +37,7 @@ class TaskUseCase @Inject constructor(
             done = false,
             sortOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1,
             createdAt = at,
+            updatedAt = at,
         )
         subTasks.upsert(item)
         refreshParent(parentId)
@@ -44,7 +45,7 @@ class TaskUseCase @Inject constructor(
     }
 
     suspend fun setSubtaskDone(subTask: SubTask, done: Boolean) {
-        subTasks.upsert(subTask.copy(done = done))
+        subTasks.upsert(subTask.copy(done = done, updatedAt = System.currentTimeMillis()))
         refreshParent(subTask.parentTaskId)
     }
 

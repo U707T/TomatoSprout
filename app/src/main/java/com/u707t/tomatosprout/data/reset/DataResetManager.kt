@@ -1,6 +1,8 @@
 package com.u707t.tomatosprout.data.reset
 
 import android.content.Context
+import androidx.room.withTransaction
+import com.u707t.tomatosprout.data.db.AppDatabase
 import com.u707t.tomatosprout.data.db.BadgeDao
 import com.u707t.tomatosprout.data.db.CheckInDao
 import com.u707t.tomatosprout.data.db.FocusDao
@@ -32,6 +34,7 @@ class DataResetManager @Inject constructor(
     private val reminders: ReminderDao,
     private val sync: SyncDao,
     private val reminderScheduler: ReminderScheduler,
+    private val db: AppDatabase,
     private val clock: AppClock,
 ) {
     suspend fun resetAll() {
@@ -39,15 +42,18 @@ class DataResetManager @Inject constructor(
         // 先取消已排期的 Alarm，再删规则；否则规则没了，闹钟还会白唤醒一次
         runCatching { reminderScheduler.cancelAll() }
         FocusTimerStore.clear(context)
-        tasks.softDeleteAll(now)
-        subTasks.deleteAll()
-        checkIns.softDeleteAll(now)
-        focus.softDeleteAll(now)
-        wishes.softDeleteAll(now)
-        reminders.deleteAll()
-        badges.resetUnlocks()
-        sync.clearLogs()
-        // 专注被软删除后，实际番茄数也要归零
-        tasks.recountCompletedPomos()
+        // 数据库侧整体事务：中途失败不会留下「任务删了、规则还在」的半清理状态
+        db.withTransaction {
+            tasks.softDeleteAll(now)
+            subTasks.deleteAll()
+            checkIns.softDeleteAll(now)
+            focus.softDeleteAll(now)
+            wishes.softDeleteAll(now)
+            reminders.deleteAll()
+            badges.resetUnlocks()
+            sync.clearLogs()
+            // 专注被软删除后，实际番茄数也要归零
+            tasks.recountCompletedPomos()
+        }
     }
 }

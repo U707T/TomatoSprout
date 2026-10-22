@@ -89,6 +89,9 @@ interface SubTaskDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(entities: List<SubTaskEntity>)
 
+    @Upsert
+    suspend fun upsertAll(entities: List<SubTaskEntity>)
+
     @Query("DELETE FROM subtasks WHERE id = :id")
     suspend fun delete(id: String)
 

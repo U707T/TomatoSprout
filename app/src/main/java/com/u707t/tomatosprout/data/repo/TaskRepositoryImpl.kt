@@ -63,6 +63,22 @@ class TaskRepositoryImpl @Inject constructor(
     }
     override suspend fun insertAll(items: List<SubTask>) = subTasks.insertAll(items.map { it.toEntity() })
 
+    override suspend fun mergeAll(items: List<SubTask>): MergeReport {
+        if (items.isEmpty()) return MergeReport()
+        val local = subTasks.all().associateBy { it.id }
+        val toUpsert = items
+            .filter { remote -> local[remote.id]?.let { remote.updatedAt > it.updatedAt } ?: true }
+            .associateBy { it.id }
+            .values
+        val updated = toUpsert.count { local[it.id] != null }
+        subTasks.upsertAll(toUpsert.map { it.toEntity() })
+        return MergeReport(
+            inserted = toUpsert.size - updated,
+            updated = updated,
+            skipped = items.size - toUpsert.size,
+        )
+    }
+
     override suspend fun captureAll(): TaskBundle = TaskBundle(
         tasks = tasks.all().map { it.toDomain() },
         habitRules = habits.all().map { it.toDomain() },

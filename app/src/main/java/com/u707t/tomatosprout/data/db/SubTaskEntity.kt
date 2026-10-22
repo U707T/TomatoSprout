@@ -1,5 +1,6 @@
 package com.u707t.tomatosprout.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -26,4 +27,6 @@ data class SubTaskEntity(
     val done: Boolean = false,
     val sortOrder: Int = 0,
     val createdAt: Long = 0L,
+    /** v6：记录级合并时间戳。旧数据回填为 createdAt。 */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
 )

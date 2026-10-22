@@ -1,19 +1,23 @@
 package com.u707t.tomatosprout.backup
 
+import com.u707t.tomatosprout.data.db.AppDatabase
 import com.u707t.tomatosprout.data.db.toDomain
 import com.u707t.tomatosprout.data.db.toEntity
 import com.u707t.tomatosprout.domain.AppClock
+import com.u707t.tomatosprout.domain.BadgeRefresher
 import com.u707t.tomatosprout.domain.BadgeRepository
 import com.u707t.tomatosprout.domain.CheckInRepository
 import com.u707t.tomatosprout.domain.FocusRepository
 import com.u707t.tomatosprout.domain.ReminderRepository
 import com.u707t.tomatosprout.domain.SettingsRepository
+import com.u707t.tomatosprout.domain.SubTaskRepository
 import com.u707t.tomatosprout.domain.TaskBundle
 import com.u707t.tomatosprout.domain.TaskRepository
 import com.u707t.tomatosprout.domain.ThemeMode
 import com.u707t.tomatosprout.domain.WishRepository
 import com.u707t.tomatosprout.sync.SnapshotFactory
 import com.u707t.tomatosprout.sync.SyncSnapshot
+import androidx.room.withTransaction
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.LocalTime
@@ -32,12 +36,15 @@ data class ImportResult(
 class BackupManager @Inject constructor(
     private val snapshots: SnapshotFactory,
     private val tasks: TaskRepository,
+    private val subTasks: SubTaskRepository,
     private val checkIns: CheckInRepository,
     private val focus: FocusRepository,
     private val badges: BadgeRepository,
+    private val badgeRefresher: BadgeRefresher,
     private val reminders: ReminderRepository,
     private val wishes: WishRepository,
     private val settings: SettingsRepository,
+    private val db: AppDatabase,
     private val clock: AppClock,
 ) {
     private val json = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }
@@ -65,54 +72,63 @@ class BackupManager @Inject constructor(
             json.decodeFromString<SyncSnapshot>(text)
         }.getOrElse { return ImportResult(false, error = "文件不是有效的番茄芽备份：${it.message?.take(80)}") }
 
-        if (snapshot.schemaVersion > 3) return ImportResult(false, error = "备份版本较新，请升级 App 后再导入")
+        if (snapshot.schemaVersion > 4) return ImportResult(false, error = "备份版本较新，请升级 App 后再导入")
         val invalid = validate(snapshot)
         if (invalid != null) return ImportResult(false, error = invalid)
 
         var imported = 0
         var conflicts = 0
         var skipped = 0
-        val localTasks = tasks.captureAll().tasks.associateBy { it.id }
-        // 新任务 + 与本地完全一致的任务：它们的规则/子任务可以安全补入；冲突任务保留本地
-        val acceptedTaskIds = mutableSetOf<String>()
 
-        snapshot.tasks.forEach { remote ->
-            val local = localTasks[remote.id]
-            when {
-                local == null -> {
-                    tasks.restoreAll(TaskBundle(tasks = listOf(remote.toDomain())), overwrite = false)
-                    acceptedTaskIds += remote.id
-                    imported++
+        // 导入是一个整体：任务、规则、打卡、专注、徽章要么全部写入，要么全部回滚。
+        db.withTransaction {
+            val localTasks = tasks.captureAll().tasks.associateBy { it.id }
+            // 新任务 + 与本地完全一致的任务：它们的规则/子任务可以安全补入；冲突任务保留本地
+            val acceptedTaskIds = mutableSetOf<String>()
+
+            snapshot.tasks.forEach { remote ->
+                val local = localTasks[remote.id]
+                when {
+                    local == null -> {
+                        tasks.restoreAll(TaskBundle(tasks = listOf(remote.toDomain())), overwrite = false)
+                        acceptedTaskIds += remote.id
+                        imported++
+                    }
+                    local.toEntity() == remote -> {
+                        acceptedTaskIds += remote.id
+                        skipped++
+                    }
+                    else -> conflicts++ // 保留本地，冲突只提示不覆盖
                 }
-                local.toEntity() == remote -> {
-                    acceptedTaskIds += remote.id
-                    skipped++
-                }
-                else -> conflicts++ // 保留本地，冲突只提示不覆盖
             }
+            val subReport = subTasks.mergeAll(
+                snapshot.subTasks.filter { it.parentTaskId in acceptedTaskIds }.map { it.toDomain() },
+            )
+            imported += subReport.inserted + subReport.updated
+            skipped += subReport.skipped
+            snapshot.habitRules.filter { it.taskId in acceptedTaskIds }.forEach {
+                // 只补缺失规则，不覆盖本地已经存在的规则
+                if (tasks.habitRule(it.taskId) == null) tasks.upsertHabitRule(it.toDomain())
+            }
+            snapshot.goalRules.filter { it.taskId in acceptedTaskIds }.forEach {
+                if (tasks.goalRule(it.taskId) == null) tasks.upsertGoalRule(it.toDomain())
+            }
+            val checkReport = checkIns.mergeAll(snapshot.checkIns.map { it.toDomain() })
+            val focusReport = focus.mergeAll(snapshot.focusSessions.map { it.toDomain() })
+            // 导入的历史专注会改变番茄账本，按记录重算一次
+            tasks.recountCompletedPomos()
+            val badgeReport = badges.restoreAll(snapshot.badges.map { it.toDomain() })
+            val wishReport = wishes.restoreAll(snapshot.wishes.map { it.toDomain() })
+            val reminderReport = reminders.restoreAll(snapshot.reminders.map { it.toDomain() })
+            imported += checkReport.inserted + checkReport.updated +
+                focusReport.inserted + focusReport.updated +
+                badgeReport.inserted + wishReport.inserted + reminderReport.inserted
+            skipped += checkReport.skipped + focusReport.skipped +
+                badgeReport.skipped + wishReport.skipped + reminderReport.skipped
         }
-        snapshot.subTasks.filter { it.parentTaskId in acceptedTaskIds }.forEach {
-            tasks.restoreAll(TaskBundle(subTasks = listOf(it.toDomain())), overwrite = false)
-        }
-        snapshot.habitRules.filter { it.taskId in acceptedTaskIds }.forEach {
-            // 只补缺失规则，不覆盖本地已经存在的规则
-            if (tasks.habitRule(it.taskId) == null) tasks.upsertHabitRule(it.toDomain())
-        }
-        snapshot.goalRules.filter { it.taskId in acceptedTaskIds }.forEach {
-            if (tasks.goalRule(it.taskId) == null) tasks.upsertGoalRule(it.toDomain())
-        }
-        val checkReport = checkIns.mergeAll(snapshot.checkIns.map { it.toDomain() })
-        val focusReport = focus.mergeAll(snapshot.focusSessions.map { it.toDomain() })
-        // 导入的历史专注会改变番茄账本，按记录重算一次
-        tasks.recountCompletedPomos()
-        val badgeReport = badges.restoreAll(snapshot.badges.map { it.toDomain() })
-        val wishReport = wishes.restoreAll(snapshot.wishes.map { it.toDomain() })
-        val reminderReport = reminders.restoreAll(snapshot.reminders.map { it.toDomain() })
-        imported += checkReport.inserted + checkReport.updated +
-            focusReport.inserted + focusReport.updated +
-            badgeReport.inserted + wishReport.inserted + reminderReport.inserted
-        skipped += checkReport.skipped + focusReport.skipped +
-            badgeReport.skipped + wishReport.skipped + reminderReport.skipped
+
+        // 导入的远端数据也可能解锁徽章；DataStore 设置不在 Room 事务里
+        runCatching { badgeRefresher.refresh() }
 
         snapshot.settings?.let { s ->
             settings.update {
