@@ -52,6 +52,8 @@ data class HabitRuleEntity(
     val weekdaysMask: Int = 0b1111111,
     val intervalDays: Int = 1,
     val startDate: String,
+    /** v8：规则记录级时间戳。 */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
 )
 
 @Serializable
@@ -62,6 +64,8 @@ data class GoalRuleEntity(
     val endDate: String,
     val targetTotalCount: Int? = null,
     val targetTotalSeconds: Long? = null,
+    /** v8：规则记录级时间戳。 */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
 )
 
 @Serializable
@@ -127,6 +131,8 @@ data class ReminderRuleEntity(
     val enabled: Boolean = true,
     /** v7：记录级合并时间戳。 */
     @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
+    /** v8：软删除墓碑；null = 未删除。 */
+    val deletedAt: Long? = null,
 )
 
 @Serializable

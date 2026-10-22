@@ -18,7 +18,20 @@ class ReminderRepositoryImpl @Inject constructor(private val dao: ReminderDao) :
     override suspend fun all(): List<ReminderRule> = dao.all().map { it.toDomain() }
     override suspend fun forTask(taskId: String): ReminderRule? = dao.forTask(taskId)?.toDomain()
     override suspend fun upsert(rule: ReminderRule) = dao.upsert(rule.toEntity())
-    override suspend fun deleteForTask(taskId: String) = dao.deleteForTask(taskId)
+
+    override suspend fun saveForTask(rule: ReminderRule): ReminderRule {
+        val existing = dao.forTaskAny(rule.taskId)
+        // 已删除的提醒仍占着 taskId 唯一索引；复用旧 id 复活，避免新增时撞索引
+        val persisted = if (existing != null) {
+            rule.copy(id = existing.id, deletedAt = null)
+        } else {
+            rule
+        }
+        dao.upsert(persisted.toEntity())
+        return persisted
+    }
+
+    override suspend fun deleteForTask(taskId: String, at: Long) = dao.deleteForTask(taskId, at)
 
     /**
      * 记录级合并。reminder_rules 对 taskId 有唯一索引：

@@ -13,6 +13,7 @@ import com.u707t.tomatosprout.domain.SettingsRepository
 import com.u707t.tomatosprout.domain.SubTaskRepository
 import com.u707t.tomatosprout.domain.TaskBundle
 import com.u707t.tomatosprout.domain.TaskRepository
+import com.u707t.tomatosprout.domain.TaskType
 import com.u707t.tomatosprout.domain.ThemeMode
 import com.u707t.tomatosprout.domain.WishRepository
 import com.u707t.tomatosprout.sync.SnapshotFactory
@@ -72,7 +73,7 @@ class BackupManager @Inject constructor(
             json.decodeFromString<SyncSnapshot>(text)
         }.getOrElse { return ImportResult(false, error = "文件不是有效的番茄芽备份：${it.message?.take(80)}") }
 
-        if (snapshot.schemaVersion > 5) return ImportResult(false, error = "备份版本较新，请升级 App 后再导入")
+        if (snapshot.schemaVersion > 6) return ImportResult(false, error = "备份版本较新，请升级 App 后再导入")
         val invalid = validate(snapshot)
         if (invalid != null) return ImportResult(false, error = invalid)
 
@@ -106,13 +107,19 @@ class BackupManager @Inject constructor(
             )
             imported += subReport.inserted + subReport.updated
             skipped += subReport.skipped
-            snapshot.habitRules.filter { it.taskId in acceptedTaskIds }.forEach {
-                // 只补缺失规则，不覆盖本地已经存在的规则
-                if (tasks.habitRule(it.taskId) == null) tasks.upsertHabitRule(it.toDomain())
-            }
-            snapshot.goalRules.filter { it.taskId in acceptedTaskIds }.forEach {
-                if (tasks.goalRule(it.taskId) == null) tasks.upsertGoalRule(it.toDomain())
-            }
+            val remoteTaskById = snapshot.tasks.associateBy { it.id }
+            val habitReport = tasks.mergeHabitRules(
+                snapshot.habitRules
+                    .filter { it.taskId in acceptedTaskIds && remoteTaskById[it.taskId]?.type == TaskType.HABIT.name }
+                    .map { it.toDomain() },
+            )
+            val goalReport = tasks.mergeGoalRules(
+                snapshot.goalRules
+                    .filter { it.taskId in acceptedTaskIds && remoteTaskById[it.taskId]?.type == TaskType.GOAL.name }
+                    .map { it.toDomain() },
+            )
+            imported += habitReport.inserted + habitReport.updated + goalReport.inserted + goalReport.updated
+            skipped += habitReport.skipped + goalReport.skipped
             val checkReport = checkIns.mergeAll(snapshot.checkIns.map { it.toDomain() })
             val focusReport = focus.mergeAll(snapshot.focusSessions.map { it.toDomain() })
             // 导入的历史专注会改变番茄账本，按记录重算一次

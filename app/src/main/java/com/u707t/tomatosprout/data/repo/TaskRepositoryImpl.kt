@@ -48,6 +48,38 @@ class TaskRepositoryImpl @Inject constructor(
     override suspend fun deleteHabitRule(taskId: String) = habits.delete(taskId)
     override suspend fun deleteGoalRule(taskId: String) = goals.delete(taskId)
 
+    override suspend fun mergeHabitRules(items: List<HabitRule>): MergeReport {
+        if (items.isEmpty()) return MergeReport()
+        val local = habits.all().associateBy { it.taskId }
+        val toUpsert = items
+            .filter { remote -> local[remote.taskId]?.let { remote.updatedAt > it.updatedAt } ?: true }
+            .associateBy { it.taskId }
+            .values
+        val updated = toUpsert.count { local[it.taskId] != null }
+        habits.upsertAll(toUpsert.map { it.toEntity() })
+        return MergeReport(
+            inserted = toUpsert.size - updated,
+            updated = updated,
+            skipped = items.size - toUpsert.size,
+        )
+    }
+
+    override suspend fun mergeGoalRules(items: List<GoalRule>): MergeReport {
+        if (items.isEmpty()) return MergeReport()
+        val local = goals.all().associateBy { it.taskId }
+        val toUpsert = items
+            .filter { remote -> local[remote.taskId]?.let { remote.updatedAt > it.updatedAt } ?: true }
+            .associateBy { it.taskId }
+            .values
+        val updated = toUpsert.count { local[it.taskId] != null }
+        goals.upsertAll(toUpsert.map { it.toEntity() })
+        return MergeReport(
+            inserted = toUpsert.size - updated,
+            updated = updated,
+            skipped = items.size - toUpsert.size,
+        )
+    }
+
     override fun observeAll(): Flow<List<SubTask>> = subTasks.observeAll().map { list -> list.map { it.toDomain() } }
     override fun observeForParent(parentId: String): Flow<List<SubTask>> =
         subTasks.observeForParent(parentId).map { list -> list.map { it.toDomain() } }

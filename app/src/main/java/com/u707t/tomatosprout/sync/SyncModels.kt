@@ -32,7 +32,7 @@ data class SettingsDto(
 /** 同步与备份共用同一份快照格式；schemaVersion 用于导入校验。 */
 @Serializable
 data class SyncSnapshot(
-    val schemaVersion: Int = 5,
+    val schemaVersion: Int = 6,
     val deviceId: String = "",
     val exportedAt: Long = 0L,
     val tasks: List<TaskEntity> = emptyList(),

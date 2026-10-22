@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.8.3 — 提醒墓碑、规则时间戳与专注页瘦身
+
+- **提醒规则墓碑**：DB v8 给 `reminder_rules` 加 `deletedAt`；删除变成软删除并跨设备生效；`saveForTask` 复用墓碑 id，避免 `taskId` 唯一索引冲突；提醒接收器跳过墓碑
+- **习惯 / 目标规则 `updatedAt`**：规则可独立于任务合并；同步只对「未删除且类型匹配」的任务应用规则，避免类型转换 / 删除后旧规则复活
+- **专注页瘦身**：抽出 `FocusPreferencesController`（常亮 / 亮度 / 沉浸 / 白噪音）与 `FocusSettlementRunner`（结算 / 长休息 / 摘要 / 事件）；ViewModel 530 → 475 行
+- **备份导入规则合并**：`BackupManager` 也按 `updatedAt` 合并规则，不再只补缺失
+- **快照 v6**：`schemaVersion` 升到 6；v2–v5 备份仍可导入，旧版 App 会提示「版本过新」
+- **迁移**：DB v8；迁移 SQL 用 SQLite 对 schema 8 逐列验证
+
 ## v1.8.2 — 提醒 / 愿望双向合并与子任务墓碑
 
 - **提醒规则双向合并**：`reminder_rules` 增加 `updatedAt`（DB v7），按 id 与 taskId 双键合并；同任务不同 id 时保留本地 id，避免撞唯一索引

@@ -74,16 +74,28 @@ class TaskUseCase @Inject constructor(
         habitRule: HabitRule?,
         goalRule: GoalRule?,
         reminder: ReminderRule?,
-    ) {
+    ): ReminderRule? {
+        val now = System.currentTimeMillis()
         tasks.upsert(task)
-        if (habitRule != null) tasks.upsertHabitRule(habitRule) else tasks.deleteHabitRule(task.id)
-        if (goalRule != null) tasks.upsertGoalRule(goalRule) else tasks.deleteGoalRule(task.id)
-        if (reminder != null) {
-            reminders.upsert(reminder.copy(updatedAt = System.currentTimeMillis()))
+        if (habitRule != null) {
+            tasks.upsertHabitRule(habitRule.copy(updatedAt = now))
         } else {
-            reminders.deleteForTask(task.id)
+            tasks.deleteHabitRule(task.id)
+        }
+        if (goalRule != null) {
+            tasks.upsertGoalRule(goalRule.copy(updatedAt = now))
+        } else {
+            tasks.deleteGoalRule(task.id)
+        }
+        // 同一任务只能有一条提醒：saveForTask 会复用已删除墓碑的 id，避免撞 taskId 唯一索引
+        val savedReminder = if (reminder != null) {
+            reminders.saveForTask(reminder.copy(updatedAt = now, deletedAt = null))
+        } else {
+            reminders.deleteForTask(task.id, now)
+            null
         }
         if (task.parentId != null) refreshParent(task.parentId)
+        return savedReminder
     }
 
     suspend fun setDone(task: Task, done: Boolean, at: Long) {
@@ -104,7 +116,7 @@ class TaskUseCase @Inject constructor(
     suspend fun delete(task: Task, at: Long) {
         tasks.softDelete(task.id, at)
         tasks.tasksByParent(task.id).forEach { child -> tasks.softDelete(child.id, at) }
-        reminders.deleteForTask(task.id)
+        reminders.deleteForTask(task.id, at)
         tasks.deleteHabitRule(task.id)
         tasks.deleteGoalRule(task.id)
         subTasks.deleteForParent(task.id, at)

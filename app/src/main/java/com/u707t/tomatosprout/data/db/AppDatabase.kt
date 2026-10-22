@@ -6,10 +6,10 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * 数据库版本 7（v1.8.2）：
- * - reminder_rules / wish_items 增加 updatedAt，提醒与愿望可以双向合并；
- * - subtasks 增加 deletedAt，子任务删除变成软删除墓碑，可以跨设备传播；
- * - check_ins / focus_sessions 沿用 v5 的记录级 updatedAt 与 interruptReason；
+ * 数据库版本 8（v1.8.3）：
+ * - reminder_rules 增加 deletedAt，提醒删除变成墓碑，可以跨设备传播；
+ * - habit_rules / goal_rules 增加 updatedAt，规则可以独立于任务合并；
+ * - subtasks 沿用 v7 的 updatedAt + deletedAt；
  * - 打卡与专注仍然只做软删除，删除任务不会级联删除历史。
  *
  * 版本演进规则：
@@ -31,7 +31,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncManifestEntity::class,
         SyncLogEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -168,6 +168,20 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE wish_items ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("UPDATE wish_items SET updatedAt = createdAt WHERE updatedAt = 0")
                 db.execSQL("ALTER TABLE subtasks ADD COLUMN deletedAt INTEGER")
+            }
+        }
+        /**
+         * v7 → v8：提醒墓碑 + 习惯 / 目标规则时间戳。
+         *
+         * 规则没有 createdAt，旧行回填 1（本地已存在），避免远端 updatedAt=0 覆盖本地。
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE reminder_rules ADD COLUMN deletedAt INTEGER")
+                db.execSQL("ALTER TABLE habit_rules ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE habit_rules SET updatedAt = 1 WHERE updatedAt = 0")
+                db.execSQL("ALTER TABLE goal_rules ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE goal_rules SET updatedAt = 1 WHERE updatedAt = 0")
             }
         }
     }

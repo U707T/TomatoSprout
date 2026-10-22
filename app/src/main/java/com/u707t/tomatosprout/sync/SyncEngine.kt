@@ -31,6 +31,7 @@ import com.u707t.tomatosprout.domain.SettingsRepository
 import com.u707t.tomatosprout.domain.SubTaskRepository
 import com.u707t.tomatosprout.domain.TaskBundle
 import com.u707t.tomatosprout.domain.TaskRepository
+import com.u707t.tomatosprout.domain.TaskType
 import com.u707t.tomatosprout.domain.WishRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -58,7 +59,7 @@ class SnapshotFactory @Inject constructor(
         val config = settings.current()
         val bundle = tasks.captureAll()
         return SyncSnapshot(
-            schemaVersion = 5,
+            schemaVersion = 6,
             deviceId = config.deviceId,
             exportedAt = clock.nowMillis(),
             tasks = bundle.tasks.map { it.toEntity() },
@@ -155,7 +156,7 @@ class SyncEngine @Inject constructor(
                 val snapshot = runCatching {
                     json.decodeFromString<SyncSnapshot>(bytes.toString(Charsets.UTF_8))
                 }.getOrElse { throw IllegalStateException("远端文件 ${file.name} 格式不正确，已停止以避免数据丢失") }
-                if (snapshot.schemaVersion > 5) throw IllegalStateException("远端备份版本过新，请升级 App")
+                if (snapshot.schemaVersion > 6) throw IllegalStateException("远端备份版本过新，请升级 App")
                 // 语义哈希：忽略每次都会变化的 exportedAt，数据没变就不重复合并
                 val hash = semanticHash(snapshot)
                 if (previous?.contentHash == hash) return@forEach
@@ -312,13 +313,29 @@ class SyncEngine @Inject constructor(
         val protectedIds = MergePolicy.protectedTaskIds(localTasks.values, lastSync)
         val localAfter = tasks.captureAll().tasks.associateBy { it.id }
         val validTaskIds = localAfter.keys
+        // 规则只合并到「未删除且类型匹配」的任务：
+        // 任务从习惯改成待办、或已删除时，远端旧规则不应该被复活。
+        val habitTaskIds = localAfter.values
+            .filter { it.deletedAt == null && it.type == TaskType.HABIT }
+            .map { it.id }
+            .toSet()
+        val goalTaskIds = localAfter.values
+            .filter { it.deletedAt == null && it.type == TaskType.GOAL }
+            .map { it.id }
+            .toSet()
         report += subTasks.mergeAll(
             remote.subTasks.filter { it.parentTaskId in validTaskIds }.map { it.toDomain() },
         )
-        remote.habitRules.filter { it.taskId in validTaskIds && it.taskId !in protectedIds }
-            .forEach { tasks.upsertHabitRule(it.toDomain()) }
-        remote.goalRules.filter { it.taskId in localAfter.keys && it.taskId !in protectedIds }
-            .forEach { tasks.upsertGoalRule(it.toDomain()) }
+        report += tasks.mergeHabitRules(
+            remote.habitRules
+                .filter { it.taskId in habitTaskIds && it.taskId !in protectedIds }
+                .map { it.toDomain() },
+        )
+        report += tasks.mergeGoalRules(
+            remote.goalRules
+                .filter { it.taskId in goalTaskIds && it.taskId !in protectedIds }
+                .map { it.toDomain() },
+        )
         report += checkIns.mergeAll(remote.checkIns.map { it.toDomain() })
         report += focus.mergeAll(remote.focusSessions.map { it.toDomain() })
         report += reminders.mergeAll(remote.reminders.map { it.toDomain() })

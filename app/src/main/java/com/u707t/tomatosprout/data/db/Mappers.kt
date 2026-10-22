@@ -74,6 +74,7 @@ fun HabitRuleEntity.toDomain() = HabitRule(
     weekdaysMask = weekdaysMask,
     intervalDays = intervalDays,
     startDate = runCatching { LocalDate.parse(startDate) }.getOrDefault(LocalDate.now()),
+    updatedAt = updatedAt,
 )
 
 fun HabitRule.toEntity() = HabitRuleEntity(
@@ -84,6 +85,7 @@ fun HabitRule.toEntity() = HabitRuleEntity(
     weekdaysMask = weekdaysMask,
     intervalDays = intervalDays,
     startDate = startDate.toString(),
+    updatedAt = updatedAt,
 )
 
 fun GoalRuleEntity.toDomain() = GoalRule(
@@ -92,6 +94,7 @@ fun GoalRuleEntity.toDomain() = GoalRule(
     endDate = LocalDate.parse(endDate),
     targetTotalCount = targetTotalCount,
     targetTotalSeconds = targetTotalSeconds,
+    updatedAt = updatedAt,
 )
 
 fun GoalRule.toEntity() = GoalRuleEntity(
@@ -100,6 +103,7 @@ fun GoalRule.toEntity() = GoalRuleEntity(
     endDate = endDate.toString(),
     targetTotalCount = targetTotalCount,
     targetTotalSeconds = targetTotalSeconds,
+    updatedAt = updatedAt,
 )
 
 fun CheckInEntity.toDomain() = CheckIn(
@@ -168,9 +172,9 @@ fun FocusSession.toEntity() = FocusSessionEntity(
     updatedAt = updatedAt,
 )
 
-fun ReminderRuleEntity.toDomain() = ReminderRule(id, taskId, timeOfDay, weekdaysMask, enabled, updatedAt)
+fun ReminderRuleEntity.toDomain() = ReminderRule(id, taskId, timeOfDay, weekdaysMask, enabled, updatedAt, deletedAt)
 
-fun ReminderRule.toEntity() = ReminderRuleEntity(id, taskId, timeOfDay, weekdaysMask, enabled, updatedAt)
+fun ReminderRule.toEntity() = ReminderRuleEntity(id, taskId, timeOfDay, weekdaysMask, enabled, updatedAt, deletedAt)
 
 fun BadgeEntity.toDomain() = Badge(id, badgeKey, name, conditionJson, unlockedAt, description)
 

@@ -358,6 +358,8 @@ class FocusSessionUseCaseTest {
         override suspend fun upsertGoalRule(rule: GoalRule) { goals[rule.taskId] = rule }
         override suspend fun deleteHabitRule(taskId: String) { habits.remove(taskId) }
         override suspend fun deleteGoalRule(taskId: String) { goals.remove(taskId) }
+        override suspend fun mergeHabitRules(items: List<HabitRule>): MergeReport = MergeReport()
+        override suspend fun mergeGoalRules(items: List<GoalRule>): MergeReport = MergeReport()
         override suspend fun captureAll(): TaskBundle = TaskBundle(items.toList(), habits.values.toList(), goals.values.toList())
         override suspend fun restoreAll(bundle: TaskBundle, overwrite: Boolean): MergeReport = MergeReport()
     }

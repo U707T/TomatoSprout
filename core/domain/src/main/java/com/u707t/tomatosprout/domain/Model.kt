@@ -69,6 +69,8 @@ data class HabitRule(
     val weekdaysMask: Int = 0b1111111,
     val intervalDays: Int = 1,
     val startDate: LocalDate,
+    /** v8：规则记录级时间戳，支持独立于任务合并。 */
+    val updatedAt: Long = 0L,
 )
 
 data class GoalRule(
@@ -77,6 +79,8 @@ data class GoalRule(
     val endDate: LocalDate,
     val targetTotalCount: Int? = null,
     val targetTotalSeconds: Long? = null,
+    /** v8：规则记录级时间戳，支持独立于任务合并。 */
+    val updatedAt: Long = 0L,
 )
 
 data class CheckIn(
@@ -128,6 +132,8 @@ data class ReminderRule(
     val enabled: Boolean = true,
     /** v7：跨设备合并用的记录级时间戳。 */
     val updatedAt: Long = 0L,
+    /** v8：软删除墓碑；null = 未删除。 */
+    val deletedAt: Long? = null,
 )
 
 data class Badge(

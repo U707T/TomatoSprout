@@ -8,11 +8,9 @@ import androidx.lifecycle.viewModelScope
 import com.u707t.tomatosprout.data.focus.FocusTimerStore
 import com.u707t.tomatosprout.di.ApplicationScope
 import com.u707t.tomatosprout.domain.AppSettings
-import com.u707t.tomatosprout.domain.BreakCycle
 import com.u707t.tomatosprout.domain.FocusEndReason
 import com.u707t.tomatosprout.domain.FocusRepository
 import com.u707t.tomatosprout.domain.FocusSessionUseCase
-import com.u707t.tomatosprout.domain.FocusSettlementInput
 import com.u707t.tomatosprout.domain.InterruptReason
 import com.u707t.tomatosprout.domain.PauseResult
 import com.u707t.tomatosprout.domain.SessionAttribution
@@ -51,15 +49,15 @@ import kotlin.math.max
 @HiltViewModel
 class FocusTimerViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val focusSessionUseCase: FocusSessionUseCase,
-    private val focusRepo: FocusRepository,
+    focusSessionUseCase: FocusSessionUseCase,
+    focusRepo: FocusRepository,
     private val tasks: TaskRepository,
     private val settingsRepo: SettingsRepository,
     private val live: FocusLiveController,
     private val fallback: FocusFallbackScheduler,
-    private val audio: FocusAudioPlayer,
-    private val events: FocusEventBus,
-    @ApplicationScope private val appScope: CoroutineScope,
+    audio: FocusAudioPlayer,
+    events: FocusEventBus,
+    @ApplicationScope appScope: CoroutineScope,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val startTaskId: String? = savedStateHandle.get<String>("taskId")
@@ -74,19 +72,19 @@ class FocusTimerViewModel @Inject constructor(
     private val recordPrompt = MutableStateFlow<RecordPrompt?>(null)
     private val stopConfirm = MutableStateFlow<StopConfirm?>(null)
     private val error = MutableStateFlow<String?>(null)
-    private val keepScreenOn = MutableStateFlow(false)
-    private val brightness = MutableStateFlow(-1f)
-    private val immersive = MutableStateFlow(false)
-    private val audioTrack = MutableStateFlow(FocusAudioOption.NONE)
-    private val audioPlaying = MutableStateFlow(false)
+    private val prefs = FocusPreferencesController(audio)
     private val settings = settingsRepo.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
+    private val settlement = FocusSettlementRunner(
+        appScope = appScope,
+        useCase = focusSessionUseCase,
+        focusRepo = focusRepo,
+        events = events,
+        onSummary = { summary.value = it },
+        onError = { error.value = it },
+    )
 
     private var dialogFrozen = false
     private var restored = false
-
-    /** 结算与新一轮专注的先后关系；跨线程读写，必须 volatile。 */
-    @Volatile
-    private var settlementGeneration = 0
 
     private val controller = FocusTimerController(
         context = context,
@@ -122,7 +120,13 @@ class FocusTimerViewModel @Inject constructor(
             ConfigState(id, focus, rest, s)
         },
         combine(summary, recordPrompt, stopConfirm, error) { s, p, c, e -> OverlayState(s, p, c, e) },
-        combine(keepScreenOn, brightness, immersive, audioTrack, audioPlaying) { keep, bright, full, track, playing ->
+        combine(
+            prefs.keepScreenOn,
+            prefs.brightness,
+            prefs.immersive,
+            prefs.audioTrack,
+            prefs.audioPlaying,
+        ) { keep, bright, full, track, playing ->
             PrefState(keep, bright, full, track, playing)
         },
     ) { core, config, overlay, prefs ->
@@ -266,7 +270,7 @@ class FocusTimerViewModel @Inject constructor(
     private fun start(state: TimerState) {
         dialogFrozen = false
         // 新一轮专注开始后，旧结算结果不再覆盖当前摘要
-        settlementGeneration++
+        settlement.beginRound()
         summary.value = null
         recordPrompt.value = null
         stopConfirm.value = null
@@ -382,50 +386,23 @@ class FocusTimerViewModel @Inject constructor(
     fun resetTimer() {
         if (controller.timer.value == null) return
         controller.clear()
-        audio.stop()
-        audioPlaying.value = false
-        audioTrack.value = FocusAudioOption.NONE
+        prefs.stopAudio()
         dialogFrozen = false
-        settlementGeneration++
+        settlement.beginRound()
         summary.value = null
         recordPrompt.value = null
         stopConfirm.value = null
     }
 
-    fun setKeepScreenOn(enabled: Boolean) {
-        keepScreenOn.value = enabled
-    }
+    fun setKeepScreenOn(enabled: Boolean) = prefs.setKeepScreenOn(enabled)
 
-    fun setBrightness(value: Float) {
-        brightness.value = value.coerceIn(0.1f, 1f)
-    }
+    fun setBrightness(value: Float) = prefs.setBrightness(value)
 
-    fun toggleImmersive() {
-        immersive.value = !immersive.value
-    }
+    fun toggleImmersive() = prefs.toggleImmersive()
 
-    fun toggleAudio() {
-        if (audioPlaying.value) {
-            audio.pause()
-            audioPlaying.value = false
-        } else {
-            val option = audioTrack.value.takeIf { it != FocusAudioOption.NONE } ?: FocusAudioOption.WHITE_NOISE
-            audioTrack.value = option
-            audio.play(option)
-            audioPlaying.value = true
-        }
-    }
+    fun toggleAudio() = prefs.toggleAudio()
 
-    fun selectAudio(option: FocusAudioOption) {
-        audioTrack.value = option
-        if (option == FocusAudioOption.NONE) {
-            audio.stop()
-            audioPlaying.value = false
-        } else {
-            audio.play(option)
-            audioPlaying.value = true
-        }
-    }
+    fun selectAudio(option: FocusAudioOption) = prefs.selectAudio(option)
 
     private fun currentTask(): Task? =
         activeTasks.value.firstOrNull { it.id == selectedTask.value }
@@ -458,16 +435,12 @@ class FocusTimerViewModel @Inject constructor(
             endedAt,
             SystemAppClock.zone(),
         )
-        val generation = ++settlementGeneration
-
         controller.clear()
         dialogFrozen = false
         recordPrompt.value = null
         stopConfirm.value = null
         summary.value = null
-        audio.stop()
-        audioPlaying.value = false
-        audioTrack.value = FocusAudioOption.NONE
+        prefs.stopAudio()
 
         if (stopped.isBreak) {
             summary.value = SessionSummary(
@@ -480,76 +453,21 @@ class FocusTimerViewModel @Inject constructor(
             return
         }
 
-        appScope.launch {
-            runCatching {
-                // 用户可能已经退出专注页：结算不挂在 viewModelScope 上，避免写入被取消
-                focusSessionUseCase.settle(
-                    FocusSettlementInput(
-                        task = task,
-                        mode = mode,
-                        plannedSeconds = stopped.plannedSeconds,
-                        actualSeconds = elapsed,
-                        startedAt = stopped.startedAtEpoch,
-                        endedAt = endedAt,
-                        interruptionCount = stopped.interruptionCount,
-                        strict = stopped.strict,
-                        midnightMode = settings.value.midnightShift,
-                        ignoreShortFocus = settings.value.ignoreShortFocus,
-                        reason = reason,
-                        interruptReason = interruptReason,
-                    ),
-                )
-            }.onSuccess { result ->
-                val seconds = result.session?.actualSeconds ?: elapsed
-                // 长休息节奏：按归属日统计已完成的番茄数（包含刚写入的这一条）
-                val longBreakDue = if (result.session?.mode == "pomodoro" && !result.interrupted) {
-                    val count = runCatching {
-                        focusRepo.completedPomodorosOn(result.attributedDate)
-                    }.getOrDefault(0)
-                    BreakCycle.isLongBreakDue(count)
-                } else {
-                    false
-                }
-                // 如果用户已经开始了下一轮专注，旧摘要不要覆盖新界面
-                if (generation == settlementGeneration) {
-                    summary.value = SessionSummary(
-                        minutes = if (result.discarded) seconds / 60 else max(1, seconds / 60),
-                        taskTitle = taskTitle,
-                        newBadges = result.newBadges,
-                        actualSeconds = seconds,
-                        discarded = result.discarded,
-                        discardReason = result.discardReason,
-                        checkInWritten = result.checkInWritten,
-                        streak = result.streak,
-                        interrupted = result.interrupted,
-                        attributedDate = result.attributedDate,
-                        crossDay = crossDay,
-                        interruptReason = result.interruptReason,
-                        longBreakDue = longBreakDue,
-                    )
-                }
-                events.emit(
-                    FocusSettledEvent(
-                        taskId = task?.id,
-                        taskTitle = taskTitle,
-                        actualSeconds = result.session?.actualSeconds ?: elapsed,
-                        checkInWritten = result.checkInWritten,
-                        streak = result.streak,
-                        interrupted = result.interrupted,
-                        discarded = result.discarded,
-                        discardReason = result.discardReason,
-                        attributedDate = result.attributedDate,
-                    ),
-                )
-            }.onFailure { e ->
-                if (generation == settlementGeneration) {
-                    error.value = e.message ?: "专注结算失败"
-                }
-            }
-        }
+        settlement.settle(
+            stopped = stopped,
+            elapsed = elapsed,
+            endedAt = endedAt,
+            task = task,
+            taskTitle = taskTitle,
+            mode = mode,
+            reason = reason,
+            interruptReason = interruptReason,
+            settings = settings.value,
+            crossDay = crossDay,
+        )
     }
 
     override fun onCleared() {
-        audio.release()
+        prefs.release()
     }
 }

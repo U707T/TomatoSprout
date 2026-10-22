@@ -241,20 +241,21 @@ class HabitEditViewModel @Inject constructor(
                     enabled = true,
                 )
             } else null
-            runCatching {
-                useCase.save(task, habit, goal, reminder)
+            val savedReminder = runCatching {
+                val saved = useCase.save(task, habit, goal, reminder)
                 // 新建任务时先暂存子任务，主任务落库后再写入
                 current.subtasks.filter { it.parentTaskId.isBlank() }.forEach { draft ->
                     val created = useCase.addSubtask(id, draft.title, now)
                     if (draft.done) useCase.setSubtaskDone(created, true)
                 }
-            }.onFailure { e ->
+                saved
+            }.getOrElse { e ->
                 edit { it.copy(saving = false, error = e.message ?: "保存失败") }
                 return@launch
             }
             // 重新排期提醒（旧规则若存在先取消）
             existingReminderId?.let { scheduler.cancel(it) }
-            if (reminder != null) scheduler.schedule(reminder)
+            savedReminder?.let { scheduler.schedule(it) }
             edit { it.copy(saving = false) }
             saved.emit(Unit)
         }

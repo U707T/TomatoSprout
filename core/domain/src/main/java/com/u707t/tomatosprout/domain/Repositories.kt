@@ -47,6 +47,10 @@ interface TaskRepository {
     suspend fun deleteHabitRule(taskId: String)
     suspend fun deleteGoalRule(taskId: String)
 
+    /** 规则记录级合并：远端 updatedAt 更新才覆盖本地。 */
+    suspend fun mergeHabitRules(items: List<HabitRule>): MergeReport
+    suspend fun mergeGoalRules(items: List<GoalRule>): MergeReport
+
     suspend fun captureAll(): TaskBundle
     suspend fun restoreAll(bundle: TaskBundle, overwrite: Boolean): MergeReport
 }
@@ -99,7 +103,9 @@ interface ReminderRepository {
     suspend fun all(): List<ReminderRule>
     suspend fun forTask(taskId: String): ReminderRule?
     suspend fun upsert(rule: ReminderRule)
-    suspend fun deleteForTask(taskId: String)
+    /** 保存提醒：若同 taskId 已有墓碑，复用其 id 并复活，避免撞唯一索引。 */
+    suspend fun saveForTask(rule: ReminderRule): ReminderRule
+    suspend fun deleteForTask(taskId: String, at: Long)
 
     /** 记录级合并；任务唯一键相同但 id 不同时保留本地 id。 */
     suspend fun mergeAll(items: List<ReminderRule>): MergeReport

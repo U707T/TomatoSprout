@@ -36,16 +36,16 @@ class ReminderScheduler @Inject constructor(
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
 
     suspend fun rescheduleAll() {
-        reminders.all().filter { it.enabled }.forEach { schedule(it) }
+        reminders.all().filter { it.enabled && it.deletedAt == null }.forEach { schedule(it) }
     }
 
     /** 清除所有已排期提醒（清空数据 / 重置时用）。 */
     suspend fun cancelAll() {
-        reminders.all().forEach { cancel(it.id) }
+        reminders.all().filter { it.deletedAt == null }.forEach { cancel(it.id) }
     }
 
     fun schedule(rule: ReminderRule) {
-        if (!rule.enabled) {
+        if (!rule.enabled || rule.deletedAt != null) {
             cancel(rule.id)
             return
         }
@@ -106,7 +106,7 @@ class ReminderReceiver : BroadcastReceiver() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val rule = reminders.all().firstOrNull { it.id == ruleId } ?: return@launch
-                if (!rule.enabled) return@launch
+                if (!rule.enabled || rule.deletedAt != null) return@launch
                 val task = tasks.task(rule.taskId)
                 val config = settings.current()
                 if (

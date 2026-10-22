@@ -260,20 +260,25 @@ interface BadgeDao {
 
 @Dao
 interface ReminderDao {
-    @Query("SELECT * FROM reminder_rules ORDER BY taskId ASC")
+    @Query("SELECT * FROM reminder_rules WHERE deletedAt IS NULL ORDER BY taskId ASC")
     fun observeAll(): Flow<List<ReminderRuleEntity>>
 
+    /** 同步 / 备份用：包含软删除墓碑。 */
     @Query("SELECT * FROM reminder_rules ORDER BY taskId ASC")
     suspend fun all(): List<ReminderRuleEntity>
 
-    @Query("SELECT * FROM reminder_rules WHERE taskId = :taskId LIMIT 1")
+    @Query("SELECT * FROM reminder_rules WHERE taskId = :taskId AND deletedAt IS NULL LIMIT 1")
     suspend fun forTask(taskId: String): ReminderRuleEntity?
+
+    /** 保存时用：包含墓碑，便于复用 id 复活。 */
+    @Query("SELECT * FROM reminder_rules WHERE taskId = :taskId LIMIT 1")
+    suspend fun forTaskAny(taskId: String): ReminderRuleEntity?
 
     @Upsert
     suspend fun upsert(entity: ReminderRuleEntity)
 
-    @Query("DELETE FROM reminder_rules WHERE taskId = :taskId")
-    suspend fun deleteForTask(taskId: String)
+    @Query("UPDATE reminder_rules SET deletedAt = :at, updatedAt = MAX(updatedAt, :at) WHERE taskId = :taskId AND deletedAt IS NULL")
+    suspend fun deleteForTask(taskId: String, at: Long)
 
     @Query("DELETE FROM reminder_rules")
     suspend fun deleteAll()

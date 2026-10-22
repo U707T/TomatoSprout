@@ -111,6 +111,8 @@ class TaskUseCaseTest {
         override suspend fun upsertGoalRule(rule: GoalRule) = Unit
         override suspend fun deleteHabitRule(taskId: String) = Unit
         override suspend fun deleteGoalRule(taskId: String) = Unit
+        override suspend fun mergeHabitRules(items: List<HabitRule>): MergeReport = MergeReport()
+        override suspend fun mergeGoalRules(items: List<GoalRule>): MergeReport = MergeReport()
         override suspend fun captureAll(): TaskBundle = TaskBundle(tasks = items.toList())
         override suspend fun restoreAll(bundle: TaskBundle, overwrite: Boolean): MergeReport = MergeReport()
     }
@@ -120,7 +122,8 @@ class TaskUseCaseTest {
         override suspend fun all(): List<ReminderRule> = emptyList()
         override suspend fun forTask(taskId: String): ReminderRule? = null
         override suspend fun upsert(rule: ReminderRule) = Unit
-        override suspend fun deleteForTask(taskId: String) = Unit
+        override suspend fun saveForTask(rule: ReminderRule): ReminderRule = rule
+        override suspend fun deleteForTask(taskId: String, at: Long) = Unit
         override suspend fun mergeAll(items: List<ReminderRule>): MergeReport = MergeReport()
     }
 
