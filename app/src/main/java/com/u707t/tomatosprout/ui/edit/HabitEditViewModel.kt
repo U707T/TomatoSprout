@@ -44,6 +44,8 @@ data class EditState(
     val goalEndDate: LocalDate = LocalDate.now().plusDays(30),
     val timerMode: String = "none",
     val focusMinutes: Int = 25,
+    /** 预估番茄数；0 = 不设目标。每完成一次专注，实际番茄数 +1。 */
+    val estimatedPomos: Int = 0,
     val subtasks: List<SubTask> = emptyList(),
     val loading: Boolean = true,
     val saving: Boolean = false,
@@ -71,6 +73,9 @@ class HabitEditViewModel @Inject constructor(
     private var existingStatus: TaskStatus = TaskStatus.TODO
     private var existingSortOrder: Int = 0
     private var existingReminderId: String? = null
+    private var existingCompletedPomos: Int = 0
+    private var existingRepeatRule: String? = null
+    private var existingDeletedAt: Long? = null
 
     init {
         viewModelScope.launch { load() }
@@ -97,6 +102,9 @@ class HabitEditViewModel @Inject constructor(
         createdAt = task.createdAt
         existingStatus = task.status
         existingSortOrder = task.sortOrder
+        existingCompletedPomos = task.completedPomos
+        existingRepeatRule = task.repeatRule
+        existingDeletedAt = task.deletedAt
         val habit = useCase.habitRule(taskId)
         val goal = useCase.goalRule(taskId)
         val reminder = useCase.reminder(taskId)
@@ -123,6 +131,7 @@ class HabitEditViewModel @Inject constructor(
                 goalEndDate = goal?.endDate ?: LocalDate.now().plusDays(30),
                 timerMode = task.timerMode,
                 focusMinutes = task.focusMinutes,
+                estimatedPomos = task.estimatedPomos,
                 subtasks = children,
                 loading = false,
             )
@@ -158,6 +167,7 @@ class HabitEditViewModel @Inject constructor(
     fun setDueAt(value: Long?) = edit { it.copy(dueAt = value) }
     fun setTimerMode(value: String) = edit { it.copy(timerMode = value) }
     fun setFocusMinutes(value: Int) = edit { it.copy(focusMinutes = value.coerceIn(5, 180)) }
+    fun setEstimatedPomos(value: Int) = edit { it.copy(estimatedPomos = value.coerceIn(0, 99)) }
     fun clearError() = edit { it.copy(error = null) }
 
     fun save() {
@@ -188,6 +198,9 @@ class HabitEditViewModel @Inject constructor(
                 icon = current.icon,
                 priority = current.priority,
                 dueAt = current.dueAt,
+                repeatRule = existingRepeatRule,
+                estimatedPomos = current.estimatedPomos,
+                completedPomos = existingCompletedPomos,
                 createdAt = createdAt,
                 updatedAt = now,
                 status = existingStatus,
@@ -195,6 +208,7 @@ class HabitEditViewModel @Inject constructor(
                 sortOrder = existingSortOrder,
                 timerMode = current.timerMode,
                 focusMinutes = current.focusMinutes,
+                deletedAt = existingDeletedAt,
             )
             val habit = if (current.type == TaskType.HABIT) {
                 HabitRule(

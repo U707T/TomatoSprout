@@ -53,7 +53,7 @@ class TaskUseCase @Inject constructor(
         refreshParent(subTask.parentTaskId)
     }
 
-    /** 任务卡片流中的上移/下移；首次移动时把隐式顺序固化为 sortOrder。 */
+    /** 任务卡片流中的上移/下移；每次移动先把隐式顺序固化成 1..N，再交换。 */
     suspend fun moveTask(taskId: String, delta: Int, at: Long) {
         val all = tasks.captureAll().tasks
             .filter { it.deletedAt == null && it.parentId == null }
@@ -61,16 +61,11 @@ class TaskUseCase @Inject constructor(
         val index = all.indexOfFirst { it.id == taskId }
         val target = index + delta
         if (index < 0 || target !in all.indices) return
-        val normalized = all.all { it.sortOrder == 0 }
-        if (normalized) {
-            all.forEachIndexed { i, task -> tasks.updateSortOrder(task.id, i + 1, at) }
-        }
-        val current = all[index]
-        val swapped = all[target]
-        val currentOrder = if (normalized) index + 1 else current.sortOrder
-        val swappedOrder = if (normalized) target + 1 else swapped.sortOrder
-        tasks.updateSortOrder(current.id, swappedOrder, at)
-        tasks.updateSortOrder(swapped.id, currentOrder, at)
+        // 只判断「全部为 0」不够：只要队列里存在重复 sortOrder，交换就会变成空操作。
+        // 直接整体归一化，成本 O(n) 次单列 UPDATE，个人任务量级可忽略。
+        all.forEachIndexed { i, task -> tasks.updateSortOrder(task.id, i + 1, at) }
+        tasks.updateSortOrder(all[index].id, target + 1, at)
+        tasks.updateSortOrder(all[target].id, index + 1, at)
     }
 
     suspend fun save(

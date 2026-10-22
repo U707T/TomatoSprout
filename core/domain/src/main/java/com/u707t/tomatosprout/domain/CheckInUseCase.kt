@@ -136,6 +136,11 @@ class CheckInUseCase @Inject constructor(
         val today = clock.today()
         val rule = if (task.type == TaskType.HABIT) tasks.habitRule(task.id) else null
         val target = max(1, rule?.targetCountPerPeriod ?: 1)
+        // 排期外允许「看到」习惯，但不允许写打卡：否则会出现一条不计入连续天数、
+        // 却显示成「已打卡」的幽灵记录。
+        if (rule != null && !HabitSchedule.isScheduled(rule, today)) {
+            return CheckInResult.Rejected("今天不在这个习惯的排期里")
+        }
         val existing = checkIns.forTask(task.id).filter { it.date == today && it.deletedAt == null }
         val current = existing.firstOrNull()
         if (current != null && rule != null && current.count < target) {
@@ -177,7 +182,7 @@ class CheckInUseCase @Inject constructor(
             checkIns.updateCount(current.id, current.count + 1)
             written = true
         }
-        if (task.type == TaskType.TODO) markDone(task, at)
+        // 计时完成只写打卡，不自动把任务标成完成；完成动作由用户在长按面板确认
         val newBadges = if (written) {
             runCatching { badges.refresh() }.getOrDefault(emptyList())
         } else {

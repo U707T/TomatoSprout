@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.u707t.tomatosprout.domain.CheckInResult
 import com.u707t.tomatosprout.domain.CheckInUseCase
+import com.u707t.tomatosprout.domain.ReminderRepository
 import com.u707t.tomatosprout.domain.StatsUseCase
 import com.u707t.tomatosprout.domain.SubTaskRepository
 import com.u707t.tomatosprout.domain.Task
@@ -11,6 +12,7 @@ import com.u707t.tomatosprout.domain.TaskStatus
 import com.u707t.tomatosprout.domain.TaskType
 import com.u707t.tomatosprout.domain.TaskUseCase
 import com.u707t.tomatosprout.domain.attributedLocalDate
+import com.u707t.tomatosprout.notify.ReminderScheduler
 import com.u707t.tomatosprout.ui.focus.FocusEventBus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -31,6 +33,8 @@ class TodoViewModel @Inject constructor(
     private val stats: StatsUseCase,
     private val subTasks: SubTaskRepository,
     private val checkInUseCase: CheckInUseCase,
+    private val reminders: ReminderRepository,
+    private val reminderScheduler: ReminderScheduler,
     focusEvents: FocusEventBus,
 ) : ViewModel() {
     private val quickId = MutableStateFlow<String?>(null)
@@ -75,19 +79,28 @@ class TodoViewModel @Inject constructor(
                 { it.createdAt },
             ),
         )
+        // 一次性分组，避免在任务循环里反复 filter 全部专注 / 打卡 / 子任务（O(任务数 × 记录数)）
+        val completedByTask = stat.sessions
+            .filter { it.completed }
+            .groupBy { it.taskId }
+        val todayChecksByTask = stat.checks
+            .filter { it.date == today }
+            .groupBy { it.taskId }
+        val subTasksByParent = allSubTasks.groupBy { it.parentTaskId }
+        val habitsByTask = stat.habits.associateBy { it.task.id }
+        val weekStart = today.minusDays((today.dayOfWeek.value - 1).toLong())
+        val weekDates = (0..6).map { weekStart.plusDays(it.toLong()) }
         val cards = active.map { task ->
-            val taskSessions = stat.sessions.filter { it.taskId == task.id }
-            val completedSessions = taskSessions.filter { it.completed }
+            val todayChecks = todayChecksByTask[task.id].orEmpty()
+            // 历史专注汇总与「今日专注」都基于 completedByTask，口径只有一份
+            val completedSessions = completedByTask[task.id].orEmpty()
             val todayCompleted = completedSessions.filter { it.attributedLocalDate(zone) == today }
-            val weekStart = today.minusDays((today.dayOfWeek.value - 1).toLong())
-            val weekMinutes = (0..6).map { offset ->
-                val date = weekStart.plusDays(offset.toLong())
+            val weekMinutes = weekDates.map { date ->
                 completedSessions.filter { it.attributedLocalDate(zone) == date }
                     .sumOf { it.actualSeconds } / 60
             }
-            val children = allSubTasks.filter { it.parentTaskId == task.id }
-            val habit = stat.habits.firstOrNull { it.task.id == task.id }
-            val todayChecks = stat.checks.filter { it.taskId == task.id && it.date == today }
+            val children = subTasksByParent[task.id].orEmpty()
+            val habit = habitsByTask[task.id]
             val checkTarget = max(1, habit?.rule?.targetCountPerPeriod ?: 1)
             val checkCount = todayChecks.sumOf { max(1, it.count) }
             TodoCardUi(
@@ -134,6 +147,7 @@ class TodoViewModel @Inject constructor(
                     canMoveUp = selectedIndex > 0,
                     canMoveDown = selectedIndex >= 0 && selectedIndex < cards.lastIndex,
                     countBased = it.isCountBased,
+                    isDone = it.isDone,
                 )
             },
         )
@@ -196,7 +210,10 @@ class TodoViewModel @Inject constructor(
      */
     fun delete(task: Task) {
         viewModelScope.launch {
+            // 先取提醒规则 id，删除后取消已排期的 Alarm，避免幽灵提醒
+            val reminder = reminders.forTask(task.id)
             useCase.delete(task, System.currentTimeMillis())
+            reminder?.let { reminderScheduler.cancel(it.id) }
             quickId.value = null
             messages.emit("已删除「${task.title}」，历史记录已保留")
         }

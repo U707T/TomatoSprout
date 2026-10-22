@@ -14,3 +14,7 @@ local.properties
 *.keystore
 key.properties
 /app/release/
+
+# 图标设计历史版本（体积大，不入库）
+design/icon/_archive/
+__pycache__/

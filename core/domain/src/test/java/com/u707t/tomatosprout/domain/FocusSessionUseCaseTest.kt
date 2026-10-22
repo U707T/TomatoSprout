@@ -65,9 +65,10 @@ class FocusSessionUseCaseTest {
         strict: Boolean = false,
         midnightMode: Boolean = false,
         ignoreShort: Boolean = true,
+        mode: String = "pomodoro",
     ) = FocusSettlementInput(
         task = task,
-        mode = "pomodoro",
+        mode = mode,
         plannedSeconds = 1500,
         actualSeconds = actualSeconds,
         startedAt = start,
@@ -212,10 +213,49 @@ class FocusSessionUseCaseTest {
     }
 
     @Test
-    fun `pomodoro completion increments completed pomos`() = runBlocking {
+    fun `countdown completion increments pomos for any task type`() = runBlocking {
+        val pomodoro = Fixture(task = task(TaskType.POMODORO, id = "p1"))
+        pomodoro.useCase.settle(input(pomodoro.task, at(day, 9, 0), at(day, 9, 25)))
+        assertEquals(1, pomodoro.tasks.items.single().completedPomos)
+
+        val todo = Fixture(task = task(TaskType.TODO, id = "t1"))
+        todo.useCase.settle(input(todo.task, at(day, 9, 0), at(day, 9, 25)))
+        assertEquals(1, todo.tasks.items.single().completedPomos)
+        assertEquals(1, todo.checkIns.items.size)
+    }
+
+    @Test
+    fun `countup completion adds focus time but no pomo`() = runBlocking {
         val f = Fixture(task = task(TaskType.POMODORO))
-        f.useCase.settle(input(f.task, at(day, 9, 0), at(day, 9, 25)))
-        assertEquals(1, f.tasks.items.single().completedPomos)
+        val result = f.useCase.settle(
+            input(
+                f.task,
+                at(day, 9, 0),
+                at(day, 9, 20),
+                actualSeconds = 1200,
+                reason = FocusEndReason.COUNTUP_FINISHED,
+                mode = "countup",
+            ),
+        )
+
+        assertFalse(result.interrupted)
+        assertEquals(0, f.tasks.items.single().completedPomos)
+        assertEquals(1200, f.focus.items.single().actualSeconds)
+    }
+
+    @Test
+    fun `countdown recovered hours later is capped to planned seconds`() = runBlocking {
+        val f = Fixture()
+        val start = at(day, 9, 0)
+        // 进程被杀 6 小时后才回到 App：elapsedRealtime 会把后台时间一起算进来
+        val result = f.useCase.settle(
+            input(f.task, start, at(day, 15, 25), actualSeconds = 6 * 3600 + 1500),
+        )
+
+        assertEquals(1500, result.session?.actualSeconds)
+        assertEquals(start + 1500_000L, result.session?.endedAt)
+        assertEquals(1500, f.focus.items.single().actualSeconds)
+        assertEquals(start + 1500_000L, f.checkIns.items.single().createdAt)
     }
 
     // ---- fakes ----

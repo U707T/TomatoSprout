@@ -201,6 +201,28 @@ fun HabitEditScreen(
                         IconButton(onClick = { viewModel.setFocusMinutes(state.focusMinutes + 5) }) { Text("+") }
                     }
                 }
+                if (state.timerMode != "none") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("预估番茄", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "每完成一次倒计时专注 = 1 个番茄；0 表示不设目标",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { viewModel.setEstimatedPomos(state.estimatedPomos - 1) }) {
+                            Text("−")
+                        }
+                        Text(
+                            if (state.estimatedPomos > 0) "${state.estimatedPomos} 个" else "不设",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        IconButton(onClick = { viewModel.setEstimatedPomos(state.estimatedPomos + 1) }) {
+                            Text("+")
+                        }
+                    }
+                }
             }
 
             SectionHeader("外观")

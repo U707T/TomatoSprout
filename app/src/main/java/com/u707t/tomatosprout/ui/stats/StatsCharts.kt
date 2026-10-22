@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -330,6 +331,91 @@ fun MonthlyBarChart(dashboard: StatsDashboard, onBarClick: (Int) -> Unit) {
                     x + barWidth / 2,
                     size.height - 4.dp.toPx(),
                     paint,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 高效时段：24 小时专注分布，对齐番茄ToDo官网的「高效时间区间」。
+ * 纯 Compose 柱形，不依赖 Canvas，空数据直接走空态。
+ */
+@Composable
+fun HourlyFocusChart(hours: List<HourBucket>, bestHour: Int?) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "高效时段",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            if (bestHour != null) {
+                Text(
+                    String.format(java.util.Locale.US, "%02d:00–%02d:59 最专注", bestHour, bestHour),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        if (hours.isEmpty() || hours.all { it.seconds <= 0 }) {
+            Box(
+                Modifier.fillMaxWidth().height(96.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "暂无专注数据",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            return@Column
+        }
+        val maxVal = hours.maxOfOrNull { it.seconds }?.coerceAtLeast(1L) ?: 1L
+        Row(
+            Modifier.fillMaxWidth().height(96.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            hours.forEach { bucket ->
+                key(bucket.hour) {
+                    Column(
+                        Modifier.weight(1f).fillMaxHeight(),
+                        verticalArrangement = Arrangement.Bottom,
+                    ) {
+                        val ratio = (bucket.seconds.toFloat() / maxVal.toFloat()).coerceIn(0f, 1f)
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(
+                                    if (bucket.seconds > 0) ratio.coerceAtLeast(0.05f) else 0f,
+                                )
+                                .background(
+                                    if (bucket.hour == bestHour) {
+                                        Tomato
+                                    } else {
+                                        Tomato.copy(alpha = 0.34f)
+                                    },
+                                    androidx.compose.foundation.shape.RoundedCornerShape(
+                                        topStart = 3.dp,
+                                        topEnd = 3.dp,
+                                    ),
+                                ),
+                        )
+                    }
+                }
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            listOf("0", "6", "12", "18", "23").forEach { label ->
+                Text(
+                    "${label}时",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

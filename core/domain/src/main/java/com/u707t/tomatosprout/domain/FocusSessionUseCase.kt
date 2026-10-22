@@ -52,8 +52,8 @@ data class FocusSettlementResult(
 /**
  * 专注结算（v1.6 唯一入口）：
  *
- * 1. 倒计时自然结束 → 写 FocusSession + 自动写 CheckIn + 更新连续天数；
- * 2. 正向计时结束（≥30s）→ 由 UI 弹窗确认后调用，写 FocusSession + CheckIn；
+ * 1. 倒计时自然结束 → 写 FocusSession + 自动写 CheckIn + 更新连续天数 + 任务实际番茄数（仅番茄钟）；
+ * 2. 正向计时结束（≥30s）→ 由 UI 弹窗确认后调用，写 FocusSession + CheckIn + 实际番茄数；
  * 3. 正向计时 <30s → ignoreShortFocus 时直接丢弃，不写任何记录；
  * 4. 手动放弃/中途停止 → 只写一条 outcome=interrupted 的 FocusSession，
  *    开启严格模式则彻底丢弃；两种情况都不触发打卡；
@@ -100,9 +100,25 @@ class FocusSessionUseCase @Inject constructor(
         val outcome = if (completed) "completed" else "interrupted"
         val task = input.task?.takeIf { it.deletedAt == null }
 
+        // 倒计时最多算一个计划番茄：进程被杀后回到 App 时，elapsedRealtime 会把
+        // 后台挂起的时长一起算进来（可能几小时），不夹住就会写出一个巨大的专注记录。
+        val planned = input.plannedSeconds.coerceAtLeast(0)
+        val actualSeconds = if (
+            input.reason == FocusEndReason.COUNTDOWN_FINISHED && planned > 0
+        ) {
+            input.actualSeconds.coerceIn(1, planned)
+        } else {
+            input.actualSeconds.coerceAtLeast(0)
+        }
+        val endedAt = if (actualSeconds < input.actualSeconds) {
+            (input.startedAt + actualSeconds * 1000L).coerceAtMost(input.endedAt)
+        } else {
+            input.endedAt
+        }
+
         // 只有「完成」才触发打卡；中断记录永远不写 CheckIn
         val checkIn = if (completed && task != null) {
-            checkIns.recordFromFocus(task, attributedDate, input.endedAt)
+            checkIns.recordFromFocus(task, attributedDate, endedAt)
         } else {
             null
         }
@@ -111,10 +127,10 @@ class FocusSessionUseCase @Inject constructor(
             id = UUID.randomUUID().toString(),
             taskId = input.task?.id,
             mode = input.mode,
-            plannedSeconds = input.plannedSeconds.coerceAtLeast(0),
-            actualSeconds = input.actualSeconds.coerceAtLeast(0),
+            plannedSeconds = planned,
+            actualSeconds = actualSeconds,
             startedAt = input.startedAt,
-            endedAt = input.endedAt,
+            endedAt = endedAt,
             isMidnightShifted = shifted,
             interruptionCount = input.interruptionCount.coerceAtLeast(0),
             outcome = outcome,
@@ -123,8 +139,10 @@ class FocusSessionUseCase @Inject constructor(
         )
         focus.insert(session)
 
-        if (completed && task?.type == TaskType.POMODORO) {
-            tasks.incrementCompletedPomos(task.id, 1, input.endedAt)
+        if (completed && task != null && input.mode == "pomodoro") {
+            // 番茄ToDo 的账本：只有「倒计时番茄」计入实际番茄数，正计时只算专注时长。
+            // 与 StatsCalculator.totalPomos / 徽章口径保持一致，避免同一张卡片出现两套番茄数。
+            tasks.incrementCompletedPomos(task.id, 1, endedAt)
         }
 
         // 专注时长/番茄数徽章依赖 session 落库，重新刷新一次；与打卡徽章去重合并

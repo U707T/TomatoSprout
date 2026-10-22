@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由 design/icon/build_icon_from_art.py 生成，勿手改 -->
+<!-- 自适应图标背景层：取插画米色底的中位色。前景层（栅格）本身盖满整块画布， -->
+<!-- 这里只负责在极少数启动器放大/视差时兜底，不出现透明或突兀色块。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#F7F3E2" />
+</shape>

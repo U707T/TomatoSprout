@@ -59,8 +59,6 @@ class BadgeStatsTest {
         assertEquals(1, stats.totalPomos)
         assertEquals(1, stats.days[today]?.checkIns)
         assertEquals(1500L, stats.days[today]?.focusSeconds)
-        assertEquals(1, stats.timeline.count { it.kind == "focus" })
-        assertEquals(4, stats.timeline.size)
     }
 
     @Test

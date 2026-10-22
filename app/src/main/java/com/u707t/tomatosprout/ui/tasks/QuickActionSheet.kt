@@ -23,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,6 +57,7 @@ fun QuickActionSheet(
     state: QuickActionUiState,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
+    onToggleDone: () -> Unit,
     onReminder: () -> Unit,
     onChangeColor: () -> Unit,
     onMoveUp: () -> Unit,
@@ -134,7 +136,17 @@ fun QuickActionSheet(
                             Text("🎨", fontSize = 20.sp, textAlign = TextAlign.Center)
                         }
                     }
-                    Spacer(Modifier.height(16.dp))
+                    TextButton(
+                        onClick = onToggleDone,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (state.isDone) "重新打开任务" else "标记为完成",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ActionTile("✏️", "编辑", Modifier.weight(1f), onEdit)
                         ActionTile("📚", "历史", Modifier.weight(1f), onHistory)

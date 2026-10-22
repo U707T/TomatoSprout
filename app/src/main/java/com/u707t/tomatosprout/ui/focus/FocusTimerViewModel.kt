@@ -19,12 +19,14 @@ import com.u707t.tomatosprout.domain.TimerEngine
 import com.u707t.tomatosprout.domain.TimerMode
 import com.u707t.tomatosprout.domain.TimerPhase
 import com.u707t.tomatosprout.domain.TimerState
+import com.u707t.tomatosprout.di.ApplicationScope
 import com.u707t.tomatosprout.notify.FocusActionReceiver
 import com.u707t.tomatosprout.notify.FocusCommandStore
 import com.u707t.tomatosprout.notify.FocusFallbackScheduler
 import com.u707t.tomatosprout.notify.FocusLiveController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -54,6 +56,7 @@ class FocusTimerViewModel @Inject constructor(
     private val fallback: FocusFallbackScheduler,
     private val audio: FocusAudioPlayer,
     private val events: FocusEventBus,
+    @ApplicationScope private val appScope: CoroutineScope,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val startTaskId: String? = savedStateHandle.get<String>("taskId")
@@ -79,6 +82,10 @@ class FocusTimerViewModel @Inject constructor(
 
     private var lastNotifiedSecond = -1L
     private var dialogFrozen = false
+
+    /** 结算与新一轮专注的先后关系；跨线程读写，必须 volatile。 */
+    @Volatile
+    private var settlementGeneration = 0
 
     private data class CoreState(val timer: TimerState?, val nowMono: Long, val tasks: List<Task>)
     private data class ConfigState(val taskId: String?, val focus: Int, val rest: Int, val settings: AppSettings)
@@ -269,6 +276,8 @@ class FocusTimerViewModel @Inject constructor(
         now.value = SystemClock.elapsedRealtime()
         lastNotifiedSecond = -1
         dialogFrozen = false
+        // 新一轮专注开始后，旧结算结果不再覆盖当前摘要
+        settlementGeneration++
         summary.value = null
         recordPrompt.value = null
         stopConfirm.value = null
@@ -403,6 +412,7 @@ class FocusTimerViewModel @Inject constructor(
         if (timer.value == null) return
         clearRuntime()
         dialogFrozen = false
+        settlementGeneration++
         summary.value = null
         recordPrompt.value = null
         stopConfirm.value = null
@@ -476,6 +486,7 @@ class FocusTimerViewModel @Inject constructor(
             endedAt,
             SystemAppClock.zone(),
         )
+        val generation = ++settlementGeneration
 
         timer.value = null
         now.value = current
@@ -502,8 +513,9 @@ class FocusTimerViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        appScope.launch {
             runCatching {
+                // 用户可能已经退出专注页：结算不挂在 viewModelScope 上，避免写入被取消
                 focusSessionUseCase.settle(
                     FocusSettlementInput(
                         task = task,
@@ -521,19 +533,22 @@ class FocusTimerViewModel @Inject constructor(
                 )
             }.onSuccess { result ->
                 val seconds = result.session?.actualSeconds ?: elapsed
-                summary.value = SessionSummary(
-                    minutes = if (result.discarded) seconds / 60 else max(1, seconds / 60),
-                    taskTitle = taskTitle,
-                    newBadges = result.newBadges,
-                    actualSeconds = seconds,
-                    discarded = result.discarded,
-                    discardReason = result.discardReason,
-                    checkInWritten = result.checkInWritten,
-                    streak = result.streak,
-                    interrupted = result.interrupted,
-                    attributedDate = result.attributedDate,
-                    crossDay = crossDay,
-                )
+                // 如果用户已经开始了下一轮专注，旧摘要不要覆盖新界面
+                if (generation == settlementGeneration) {
+                    summary.value = SessionSummary(
+                        minutes = if (result.discarded) seconds / 60 else max(1, seconds / 60),
+                        taskTitle = taskTitle,
+                        newBadges = result.newBadges,
+                        actualSeconds = seconds,
+                        discarded = result.discarded,
+                        discardReason = result.discardReason,
+                        checkInWritten = result.checkInWritten,
+                        streak = result.streak,
+                        interrupted = result.interrupted,
+                        attributedDate = result.attributedDate,
+                        crossDay = crossDay,
+                    )
+                }
                 events.emit(
                     FocusSettledEvent(
                         taskId = task?.id,
@@ -548,7 +563,9 @@ class FocusTimerViewModel @Inject constructor(
                     ),
                 )
             }.onFailure { e ->
-                error.value = e.message ?: "专注结算失败"
+                if (generation == settlementGeneration) {
+                    error.value = e.message ?: "专注结算失败"
+                }
             }
         }
     }

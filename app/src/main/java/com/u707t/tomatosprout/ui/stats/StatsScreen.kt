@@ -176,6 +176,11 @@ private fun StatsContent(
                 )
             }
         }
+        item(key = "hourly") {
+            SoftCard {
+                HourlyFocusChart(dashboard.hours, dashboard.bestHour)
+            }
+        }
         item(key = "streak") {
             SoftCard {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

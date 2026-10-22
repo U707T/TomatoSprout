@@ -28,6 +28,9 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import javax.inject.Singleton
 
 @Module
@@ -37,7 +40,7 @@ object AppModule {
     @Singleton
     fun database(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.NAME)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
             .build()
 
     @Provides fun taskDao(db: AppDatabase) = db.taskDao()
@@ -54,6 +57,11 @@ object AppModule {
     @Provides
     @Singleton
     fun clock(): AppClock = SystemAppClock
+
+    @Provides
+    @Singleton
+    @ApplicationScope
+    fun applicationScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 }
 
 @Module

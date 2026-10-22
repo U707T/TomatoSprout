@@ -3,7 +3,6 @@ package com.u707t.tomatosprout.domain
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import kotlin.math.max
 
 data class HabitSnapshot(
@@ -48,19 +47,6 @@ object TaskDisplay {
 
 data class HeatmapData(val metric: HeatmapMetric, val values: Map<LocalDate, Long>)
 
-data class TimelineItem(
-    val id: String,
-    val atMillis: Long,
-    val date: LocalDate,
-    val timeLabel: String,
-    val title: String,
-    val kind: String,
-    val detail: String,
-    val taskId: String?,
-    /** 任务已删除时标题以「[已删除]」开头，UI 置灰且不可点击。 */
-    val taskDeleted: Boolean = false,
-)
-
 data class StatsData(
     val today: LocalDate,
     val habits: List<HabitSnapshot>,
@@ -72,7 +58,6 @@ data class StatsData(
     val totalFocusSeconds: Long,
     val totalPomos: Int,
     val perfectDays: Int,
-    val timeline: List<TimelineItem>,
     val badges: List<Badge>,
     val checks: List<CheckIn> = emptyList(),
     val tasks: List<Task> = emptyList(),
@@ -84,8 +69,6 @@ data class StatsData(
 }
 
 object StatsCalculator {
-    private val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
-
     fun build(
         today: LocalDate,
         tasks: List<Task>,
@@ -132,7 +115,6 @@ object StatsCalculator {
         }
 
         val perfectDays = countPerfectDays(today, habits, activeChecks)
-        val timeline = buildTimeline(activeChecks, activeFocus, taskById, zone)
         val goalProgress = goalRules.associate { goal ->
             val count = activeChecks.filter {
                 it.taskId == goal.taskId && !it.date.isBefore(goal.startDate) && !it.date.isAfter(goal.endDate)
@@ -159,7 +141,6 @@ object StatsCalculator {
             totalFocusSeconds = activeFocus.sumOf { it.actualSeconds.toLong() },
             totalPomos = activeFocus.count { it.mode == "pomodoro" && it.completed },
             perfectDays = perfectDays,
-            timeline = timeline,
             badges = badges,
             checks = activeChecks,
             // 保留已删除任务，历史记录才能显示「[已删除] 原任务名」
@@ -183,58 +164,5 @@ object StatsCalculator {
             date = date.plusDays(1)
         }
         return perfect
-    }
-
-    private fun buildTimeline(
-        checks: List<CheckIn>,
-        focus: List<FocusSession>,
-        tasks: Map<String, Task>,
-        zone: ZoneId,
-    ): List<TimelineItem> {
-        val items = ArrayList<TimelineItem>(checks.size + focus.size)
-        checks.forEach { check ->
-            val task = tasks[check.taskId]
-            val at = check.createdAt
-            items += TimelineItem(
-                id = "check-${check.id}",
-                atMillis = at,
-                date = check.date,
-                timeLabel = Instant.ofEpochMilli(at).atZone(zone).format(timeFmt),
-                title = TaskDisplay.title(task, fallback = "习惯"),
-                kind = "checkin",
-                detail = when {
-                    check.isMakeup -> "补卡"
-                    check.count > 1 -> "打卡 ×${check.count}"
-                    else -> "打卡"
-                },
-                // 任务删除后不再可点击跳转
-                taskId = check.taskId.takeIf { task != null && task.deletedAt == null },
-                taskDeleted = TaskDisplay.isDeleted(task),
-            )
-        }
-        focus.forEach { session ->
-            val task = session.taskId?.let { tasks[it] }
-            val title = when {
-                session.taskId == null -> "自由专注"
-                else -> TaskDisplay.title(task, fallback = "原任务")
-            }
-            val at = session.endedAt
-            val minutes = max(1, session.actualSeconds / 60)
-            items += TimelineItem(
-                id = "focus-${session.id}",
-                atMillis = at,
-                date = session.attributedLocalDate(zone),
-                timeLabel = Instant.ofEpochMilli(at).atZone(zone).format(timeFmt),
-                title = title,
-                kind = "focus",
-                detail = buildString {
-                    append(if (session.completed) "专注 $minutes 分钟" else "中断 · $minutes 分钟")
-                    if (session.isMidnightShifted) append(" · 跨天归属")
-                },
-                taskId = session.taskId.takeIf { task?.deletedAt == null },
-                taskDeleted = session.taskId != null && TaskDisplay.isDeleted(task),
-            )
-        }
-        return items.sortedByDescending { it.atMillis }.take(500)
     }
 }

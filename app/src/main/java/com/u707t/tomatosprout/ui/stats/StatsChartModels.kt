@@ -24,6 +24,11 @@ data class MonthlyBar(
     val selected: Boolean,
 )
 
+data class HourBucket(
+    val hour: Int,
+    val seconds: Long,
+)
+
 data class StatsDashboard(
     val selectedDate: LocalDate,
     val range: DistributionRange,
@@ -40,4 +45,6 @@ data class StatsDashboard(
     val bars: List<MonthlyBar>,
     val barMaxSeconds: Long,
     val hasFocusData: Boolean,
+    val hours: List<HourBucket> = emptyList(),
+    val bestHour: Int? = null,
 )

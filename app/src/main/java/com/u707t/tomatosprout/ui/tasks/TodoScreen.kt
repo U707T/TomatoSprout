@@ -220,6 +220,11 @@ fun TodoScreen(
                 viewModel.dismissQuickActions()
                 onEditTask(quick.taskId)
             },
+            onToggleDone = {
+                ui.cards.firstOrNull { it.task.id == quick.taskId }?.task?.let { task ->
+                    viewModel.markDone(task, !quick.isDone)
+                }
+            },
             onReminder = {
                 viewModel.dismissQuickActions()
                 onEditTask(quick.taskId)
@@ -323,7 +328,17 @@ private fun TodoBigCard(
         else -> null
     }
     val modeLabel = if (card.isCountBased) "按次打卡" else card.timerLabel
-    val metaLine = listOfNotNull(modeLabel, progressLabel).joinToString(" · ")
+    // 番茄ToDo 的待办标签：任何计时任务都显示「实际 / 预估」番茄数
+    val pomoLabel = if (!card.isCountBased && (card.task.estimatedPomos > 0 || card.task.completedPomos > 0)) {
+        if (card.task.estimatedPomos > 0) {
+            "番茄 ${card.task.completedPomos}/${card.task.estimatedPomos}"
+        } else {
+            "已完成 ${card.task.completedPomos} 个番茄"
+        }
+    } else {
+        null
+    }
+    val metaLine = listOfNotNull(modeLabel, pomoLabel, progressLabel).joinToString(" · ")
 
     Box(
         Modifier

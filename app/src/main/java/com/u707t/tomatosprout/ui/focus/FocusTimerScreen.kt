@@ -338,9 +338,11 @@ fun FocusTimerScreen(
                     timer.isBreak -> "休息也是节奏的一部分"
                     timer.phase == TimerPhase.PAUSED ->
                         if (ui.stopConfirm != null || ui.recordPrompt != null) "等待你的确认" else "已暂停"
-                    task?.type == TaskType.POMODORO ->
+                    task?.type == TaskType.HABIT ->
+                        "完成后自动打卡 · 第 ${(task.completedPomos + 1).coerceAtLeast(1)} 个番茄"
+                    task != null && timer.mode == TimerMode.COUNTDOWN ->
                         "第 ${(task.completedPomos + 1).coerceAtLeast(1)} 个番茄"
-                    task?.type == TaskType.HABIT -> "完成后自动打卡"
+                    task != null -> "正向计时 · 完成后确认记录"
                     else -> "专注进行中"
                 } + if (timer?.strict == true) " · 严格模式" else ""
                 Text(

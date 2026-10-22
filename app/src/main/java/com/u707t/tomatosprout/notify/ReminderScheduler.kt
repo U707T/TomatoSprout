@@ -24,7 +24,7 @@ import javax.inject.Singleton
 
 /**
  * 使用 AlarmManager.setAndAllowWhileIdle（不需要 SCHEDULE_EXACT_ALARM 权限）。
- * 代价：系统可能推迟几分钟送达；重启后需等 App 再次打开才恢复排期。
+ * 代价：系统可能推迟几分钟送达；开机 / 应用更新后由 BootReceiver 重排。
  * 这是「权限最小化」下的有意取舍，UI 中有说明。
  */
 @Singleton
@@ -105,7 +105,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 val task = tasks.task(rule.taskId)
                 val config = settings.current()
                 if (
-                    config.notificationsEnabled && !NotificationDnd.isMuted(config) &&
+                    config.notificationsEnabled && !DndPolicy.isMuted(config) &&
                     task != null && task.deletedAt == null
                 ) {
                     notifier.notifyReminder(
@@ -125,16 +125,5 @@ class ReminderReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_REMIND = "com.u707t.tomatosprout.REMIND"
         const val EXTRA_RULE_ID = "rule_id"
-    }
-}
-
-/** 供 Receiver 使用的 DND 判断（不依赖 Compose/UI）。 */
-object NotificationDnd {
-    fun isMuted(settings: com.u707t.tomatosprout.domain.AppSettings): Boolean {
-        if (!settings.dndEnabled) return false
-        val now = LocalTime.now()
-        val start = runCatching { LocalTime.parse(settings.dndStart) }.getOrNull() ?: return false
-        val end = runCatching { LocalTime.parse(settings.dndEnd) }.getOrNull() ?: return false
-        return if (start <= end) now >= start && now < end else now >= start || now < end
     }
 }

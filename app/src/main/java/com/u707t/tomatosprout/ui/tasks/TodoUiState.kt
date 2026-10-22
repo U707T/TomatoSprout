@@ -43,6 +43,7 @@ data class QuickActionUiState(
     val canMoveUp: Boolean,
     val canMoveDown: Boolean,
     val countBased: Boolean = false,
+    val isDone: Boolean = false,
 )
 
 data class TodoUiState(

@@ -6,9 +6,9 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * 数据库版本 3（v1.6）：
- * - 取消归档：旧 ARCHIVED 任务转为软删除；
- * - focus_sessions 增加 outcome / attributedDate / checkInId；
+ * 数据库版本 4（v1.7）：
+ * - 任务增加「实际番茄数」的单一来源回填：completedPomos = 已完成的专注次数；
+ * - 专注结算对所有任务类型累加 completedPomos（不再只限番茄任务）；
  * - 打卡与专注仍然只允许 INSERT 与软删除，删除任务不会级联删除历史。
  *
  * 版本演进规则：
@@ -30,7 +30,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncManifestEntity::class,
         SyncLogEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -103,6 +103,29 @@ abstract class AppDatabase : RoomDatabase() {
                     UPDATE focus_sessions
                     SET attributedDate = strftime('%Y-%m-%d', endedAt / 1000, 'unixepoch', 'localtime')
                     WHERE attributedDate IS NULL
+                    """.trimIndent(),
+                )
+            }
+        }
+        /**
+         * v3 → v4：把「实际番茄数」回填成已完成专注次数。
+         *
+         * v1.6 之前只有 TaskType.POMODORO 会累加 completedPomos，其它任务即使专注完成
+         * 也一直是 0。这里按 focus_sessions 的真实记录重算一次，保证老用户升级后
+         * 卡片上的「番茄 x/y」与历史数据一致。
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    UPDATE tasks
+                    SET completedPomos = (
+                        SELECT COUNT(*) FROM focus_sessions f
+                        WHERE f.taskId = tasks.id
+                          AND f.deletedAt IS NULL
+                          AND f.mode = 'pomodoro'
+                          AND COALESCE(f.outcome, 'completed') = 'completed'
+                    )
                     """.trimIndent(),
                 )
             }

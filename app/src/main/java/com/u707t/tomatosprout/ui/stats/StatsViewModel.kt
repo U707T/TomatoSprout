@@ -17,11 +17,13 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 import javax.inject.Inject
+import kotlin.math.max
 
 sealed interface StatsUiState {
     data object Loading : StatsUiState
@@ -129,8 +131,10 @@ class StatsViewModel @Inject constructor(
             DistributionRange.CUSTOM -> f.customEnd
         }
 
-        // 第一道数据防线：过滤 duration < 0、结束时间非法的脏数据
-        val safeSessions = data.sessions.filter { it.actualSeconds >= 0 && it.endedAt > 0 }
+        // 第一道数据防线：过滤 duration < 0、起止时间非法的脏数据
+        val safeSessions = data.sessions.filter {
+            it.actualSeconds >= 0 && it.endedAt > 0 && it.startedAt > 0
+        }
         val taskById = data.tasks.associateBy { it.id }
         val inRange = safeSessions.filter {
             (taskFilter == null || it.taskId == taskFilter) &&
@@ -166,12 +170,17 @@ class StatsViewModel @Inject constructor(
         }
         val colored = slices.mapIndexed { index, slice -> slice.copy(colorIndex = index) }
         val total = inRange.sumOf { it.actualSeconds.toLong() }.coerceAtLeast(0L)
-        val focusDays = safeSessions
+        // 日均与「高效时段」都必须用同一份 inRange：否则切到「日/周」时，
+        // 卡片底部仍显示全时段平均值，口径互相打架。
+        val focusDays = inRange
             .map { it.attributedLocalDate(zone) }
             .distinct()
             .size
             .coerceAtLeast(1)
-        val daily = data.days[selected]
+        val selectedSessions = inRange.filter { it.attributedLocalDate(zone) == selected }
+        val dailyCheckIns = data.checks
+            .filter { it.date == selected && (taskFilter == null || it.taskId == taskFilter) }
+            .sumOf { max(1, it.count) }
         val monthDays = (1..month.lengthOfMonth()).map { day ->
             val date = month.atDay(day)
             MonthlyBar(
@@ -181,6 +190,14 @@ class StatsViewModel @Inject constructor(
             )
         }
         val barMax = (monthDays.maxOfOrNull { it.seconds } ?: 0L).coerceAtLeast(1L)
+        // 高效时段：按专注开始时刻聚合 24 小时，跟随当前区间与任务筛选
+        val hourSeconds = LongArray(24)
+        inRange.forEach { session ->
+            val hour = Instant.ofEpochMilli(session.startedAt).atZone(zone).hour
+            if (hour in 0..23) hourSeconds[hour] += session.actualSeconds.coerceAtLeast(0).toLong()
+        }
+        val hours = (0..23).map { hour -> HourBucket(hour, hourSeconds[hour].coerceAtLeast(0L)) }
+        val bestHour = hours.maxByOrNull { it.seconds }?.takeIf { it.seconds > 0 }?.hour
         return StatsDashboard(
             selectedDate = selected,
             range = f.range,
@@ -188,15 +205,17 @@ class StatsViewModel @Inject constructor(
             customEnd = f.customEnd,
             totalSeconds = total,
             totalFocusCount = inRange.size,
-            avgDailySeconds = if (data.totalFocusSeconds <= 0) 0L else data.totalFocusSeconds / focusDays,
-            dailyFocusCount = inRange.count { it.attributedLocalDate(zone) == selected },
-            dailyFocusSeconds = (daily?.focusSeconds ?: 0L).coerceAtLeast(0L),
-            dailyCheckIns = (daily?.checkIns ?: 0).coerceAtLeast(0),
+            avgDailySeconds = total / focusDays,
+            dailyFocusCount = selectedSessions.size,
+            dailyFocusSeconds = selectedSessions.sumOf { it.actualSeconds.toLong() }.coerceAtLeast(0L),
+            dailyCheckIns = dailyCheckIns,
             slices = colored,
             month = month,
             bars = monthDays,
             barMaxSeconds = barMax,
             hasFocusData = total > 0 && colored.isNotEmpty(),
+            hours = hours,
+            bestHour = bestHour,
         )
     }
 }
