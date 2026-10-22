@@ -93,6 +93,8 @@ class BackupManager @Inject constructor(
         snapshot.goalRules.filter { it.taskId in newTaskIds }.forEach { tasks.upsertGoalRule(it.toDomain()) }
         val checkReport = checkIns.restoreAll(snapshot.checkIns.map { it.toDomain() })
         val focusReport = focus.restoreAll(snapshot.focusSessions.map { it.toDomain() })
+        // 导入的历史专注会改变番茄账本，按记录重算一次
+        tasks.recountCompletedPomos()
         val badgeReport = badges.restoreAll(snapshot.badges.map { it.toDomain() })
         val wishReport = wishes.restoreAll(snapshot.wishes.map { it.toDomain() })
         val reminderReport = reminders.restoreAll(snapshot.reminders.map { it.toDomain() })

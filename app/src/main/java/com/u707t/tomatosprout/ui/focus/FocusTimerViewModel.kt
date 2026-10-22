@@ -5,6 +5,8 @@ import android.os.SystemClock
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.u707t.tomatosprout.data.focus.FocusTimerStore
+import com.u707t.tomatosprout.di.ApplicationScope
 import com.u707t.tomatosprout.domain.AppSettings
 import com.u707t.tomatosprout.domain.FocusEndReason
 import com.u707t.tomatosprout.domain.FocusSessionUseCase
@@ -19,7 +21,6 @@ import com.u707t.tomatosprout.domain.TimerEngine
 import com.u707t.tomatosprout.domain.TimerMode
 import com.u707t.tomatosprout.domain.TimerPhase
 import com.u707t.tomatosprout.domain.TimerState
-import com.u707t.tomatosprout.di.ApplicationScope
 import com.u707t.tomatosprout.notify.FocusActionReceiver
 import com.u707t.tomatosprout.notify.FocusCommandStore
 import com.u707t.tomatosprout.notify.FocusFallbackScheduler
@@ -27,24 +28,22 @@ import com.u707t.tomatosprout.notify.FocusLiveController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import kotlin.math.max
 
 /**
- * 沉浸式专注页的唯一状态源。
+ * 沉浸式专注页的协调者。
  *
- * 结算规则（全部委托给 FocusSessionUseCase）：
- * - 倒计时自然结束：直接记录并自动打卡；
- * - 正计时结束：≥30 秒弹窗确认，<30 秒按设置直接丢弃；
- * - 手动停止未达时长：记录 interrupted，不打卡；严格模式彻底丢弃；
- * - 跨午夜：默认结束日，开启午夜模式则开始日。
+ * - 计时运行时（ticker / 快照 / 实时活动 / 兜底通知）在 [FocusTimerController]；
+ * - 结算规则（完成 / 中断 / 丢弃 / 跨午夜）全部委托给 FocusSessionUseCase；
+ * - 这里只保留：任务与时长选择、结算弹窗、音频与显示偏好、通知指令转发。
  */
 @HiltViewModel
 class FocusTimerViewModel @Inject constructor(
@@ -63,8 +62,6 @@ class FocusTimerViewModel @Inject constructor(
     private val startTimerMode: String? = savedStateHandle.get<String>("timerMode")
     private val startMinutes: Int? = savedStateHandle.get<Int>("minutes")
 
-    private val timer = MutableStateFlow<TimerState?>(null)
-    private val now = MutableStateFlow(SystemClock.elapsedRealtime())
     private val activeTasks = MutableStateFlow<List<Task>>(emptyList())
     private val selectedTask = MutableStateFlow<String?>(null)
     private val focusMinutes = MutableStateFlow(25)
@@ -80,12 +77,24 @@ class FocusTimerViewModel @Inject constructor(
     private val audioPlaying = MutableStateFlow(false)
     private val settings = settingsRepo.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
-    private var lastNotifiedSecond = -1L
     private var dialogFrozen = false
+    private var restored = false
 
     /** 结算与新一轮专注的先后关系；跨线程读写，必须 volatile。 */
     @Volatile
     private var settlementGeneration = 0
+
+    private val controller = FocusTimerController(
+        context = context,
+        scope = viewModelScope,
+        live = live,
+        fallback = fallback,
+        taskId = { selectedTask.value },
+        taskTitle = { currentTask()?.title ?: "自由专注" },
+        notificationsEnabled = { settings.value.notificationsEnabled },
+        onCountdownFinished = { settle(FocusEndReason.COUNTDOWN_FINISHED) },
+        onCommandPoll = { consumePendingCommand() },
+    )
 
     private data class CoreState(val timer: TimerState?, val nowMono: Long, val tasks: List<Task>)
     private data class ConfigState(val taskId: String?, val focus: Int, val rest: Int, val settings: AppSettings)
@@ -104,7 +113,7 @@ class FocusTimerViewModel @Inject constructor(
     )
 
     val ui: StateFlow<FocusUiState> = combine(
-        combine(timer, now, activeTasks) { t, n, list -> CoreState(t, n, list) },
+        combine(controller.timer, controller.now, activeTasks) { t, n, list -> CoreState(t, n, list) },
         combine(selectedTask, focusMinutes, breakMinutes, settings) { id, focus, rest, s ->
             ConfigState(id, focus, rest, s)
         },
@@ -135,61 +144,47 @@ class FocusTimerViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FocusUiState())
 
     init {
+        controller.startTicker()
+        // 任务与设置都就绪后再恢复计时 / 自动开始，避免结算时拿不到任务导致漏打卡
         viewModelScope.launch {
-            tasks.observeActiveTasks().collect { list -> activeTasks.value = list }
-        }
-        viewModelScope.launch {
-            val config = settingsRepo.current()
-            if (timer.value == null) {
+            val config = runCatching { settingsRepo.current() }.getOrDefault(AppSettings())
+            if (controller.timer.value == null) {
                 focusMinutes.value = config.defaultFocusMinutes
                 breakMinutes.value = config.defaultBreakMinutes
             }
-            val stored = FocusTimerStore.load(context)
-            if (stored != null) {
-                selectedTask.value = stored.taskId
-                timer.value = stored.state
-                now.value = SystemClock.elapsedRealtime()
-                if (stored.state.phase == TimerPhase.RUNNING) {
-                    refresh(false)
-                    scheduleFallback(stored.state, now.value)
-                }
-            } else if (!startTaskId.isNullOrBlank() && timer.value == null) {
-                // 从任务卡片「开始」进入并直接启动
-                selectedTask.value = startTaskId
-                startMinutes?.let { focusMinutes.value = it.coerceIn(5, 180) }
-                startFocus(startTimerMode)
-            }
-            // 必须在计时恢复之后再消费通知按钮命令，否则冷启动时 stop/pause 会丢
-            consumePendingCommand()
+            activeTasks.value = runCatching { tasks.observeActiveTasks().first() }.getOrDefault(emptyList())
+            restoreOrStart()
         }
         viewModelScope.launch {
-            var ticks = 0
-            while (true) {
-                delay(500)
-                ticks++
-                // 通知按钮在 Activity 前台时不会触发 onResume，需要轮询命令
-                if (ticks % 4 == 0 && timer.value != null) consumePendingCommand()
-                val state = timer.value ?: continue
-                if (state.phase != TimerPhase.RUNNING) continue
-                val current = SystemClock.elapsedRealtime()
-                now.value = current
-                val ticked = TimerEngine.tick(state, current)
-                if (ticked.phase == TimerPhase.FINISHED) {
-                    timer.value = ticked
-                    settle(FocusEndReason.COUNTDOWN_FINISHED)
-                } else {
-                    val second = ticked.elapsedSeconds(current).toLong()
-                    if (second != lastNotifiedSecond) {
-                        lastNotifiedSecond = second
-                        updateLive(ticked, current)
-                    }
-                }
-            }
+            tasks.observeActiveTasks().collect { list -> activeTasks.value = list }
         }
     }
 
+    private fun restoreOrStart() {
+        if (restored) return
+        restored = true
+        // 用户可能在首帧就点了「开始」，此时不要再拿旧快照覆盖新计时
+        if (controller.timer.value != null) {
+            consumePendingCommand()
+            return
+        }
+        val stored = FocusTimerStore.load(context)
+        if (stored != null) {
+            selectedTask.value = stored.taskId
+            controller.adopt(stored.state)
+            if (stored.state.phase == TimerPhase.RUNNING) controller.resumeRunning()
+        } else if (!startTaskId.isNullOrBlank()) {
+            // 从任务卡片「开始」进入并直接启动
+            selectedTask.value = startTaskId
+            startMinutes?.let { focusMinutes.value = it.coerceIn(5, 180) }
+            startFocus(startTimerMode)
+        }
+        // 必须在计时恢复之后再消费通知按钮命令，否则冷启动时 stop/pause 会丢
+        consumePendingCommand()
+    }
+
     fun onResume() {
-        refresh(true)
+        controller.refresh(true)
         consumePendingCommand()
     }
 
@@ -200,27 +195,15 @@ class FocusTimerViewModel @Inject constructor(
         }
     }
 
-    fun refresh(notify: Boolean) {
-        now.value = SystemClock.elapsedRealtime()
-        val state = timer.value ?: return
-        val ticked = TimerEngine.tick(state, now.value)
-        if (ticked.phase == TimerPhase.FINISHED) {
-            timer.value = ticked
-            settle(FocusEndReason.COUNTDOWN_FINISHED)
-        } else if (ticked.phase == TimerPhase.RUNNING && notify) {
-            updateLive(ticked, now.value)
-        }
-    }
-
     fun selectTask(id: String?) {
-        if (timer.value?.isActive == true) return
+        if (controller.timer.value?.isActive == true) return
         selectedTask.value = id
         val task = activeTasks.value.firstOrNull { it.id == id }
         if (task != null && task.focusMinutes in 5..180) focusMinutes.value = task.focusMinutes
     }
 
     fun setFocusMinutes(minutes: Int) {
-        if (timer.value?.isActive == true) return
+        if (controller.timer.value?.isActive == true) return
         focusMinutes.value = minutes.coerceIn(5, 180)
     }
 
@@ -229,17 +212,17 @@ class FocusTimerViewModel @Inject constructor(
     }
 
     fun setMode(mode: TimerMode) {
-        if (timer.value?.isActive == true) return
+        if (controller.timer.value?.isActive == true) return
         viewModelScope.launch { settingsRepo.update { it.copy(countUpMode = mode == TimerMode.COUNTUP) } }
     }
 
     fun setStrict(enabled: Boolean) {
-        if (timer.value?.isActive == true) return
+        if (controller.timer.value?.isActive == true) return
         viewModelScope.launch { settingsRepo.update { it.copy(strictMode = enabled) } }
     }
 
     fun startFocus(overrideMode: String? = null) {
-        if (timer.value?.isActive == true) return
+        if (controller.timer.value?.isActive == true) return
         val config = settings.value
         val countUp = when (overrideMode) {
             "countup", "none" -> true
@@ -258,7 +241,7 @@ class FocusTimerViewModel @Inject constructor(
     }
 
     fun startBreak() {
-        if (timer.value?.isActive == true) return
+        if (controller.timer.value?.isActive == true) return
         summary.value = null
         val state = TimerEngine.start(
             mode = TimerMode.COUNTDOWN,
@@ -272,36 +255,20 @@ class FocusTimerViewModel @Inject constructor(
     }
 
     private fun start(state: TimerState) {
-        timer.value = state
-        now.value = SystemClock.elapsedRealtime()
-        lastNotifiedSecond = -1
         dialogFrozen = false
         // 新一轮专注开始后，旧结算结果不再覆盖当前摘要
         settlementGeneration++
         summary.value = null
         recordPrompt.value = null
         stopConfirm.value = null
-        FocusTimerStore.save(context, state, selectedTask.value)
-        updateLive(state, now.value)
-        scheduleFallback(state, now.value)
+        controller.start(state)
     }
 
     fun togglePause() {
         if (stopConfirm.value != null || recordPrompt.value != null) return
-        val state = timer.value ?: return
         dialogFrozen = false
-        when (val result = TimerEngine.togglePause(state, SystemClock.elapsedRealtime())) {
-            is PauseResult.Ok -> {
-                timer.value = result.state
-                now.value = SystemClock.elapsedRealtime()
-                FocusTimerStore.save(context, result.state, selectedTask.value)
-                updateLive(result.state, now.value)
-                if (result.state.phase == TimerPhase.RUNNING) {
-                    scheduleFallback(result.state, now.value)
-                } else {
-                    fallback.cancel()
-                }
-            }
+        when (val result = controller.togglePause()) {
+            is PauseResult.Ok -> Unit
             PauseResult.StrictBlocked -> error.value = "严格模式已开启，本次专注不能暂停"
             PauseResult.NotRunning -> Unit
         }
@@ -314,48 +281,45 @@ class FocusTimerViewModel @Inject constructor(
      * - 休息：直接结束，不写专注记录。
      */
     fun requestStop() {
-        val state = timer.value ?: return
-        val current = SystemClock.elapsedRealtime()
-        now.value = current
-        val ticked = TimerEngine.tick(state, current)
-        if (ticked.phase == TimerPhase.FINISHED) {
-            timer.value = ticked
+        val snap = controller.snapshot() ?: return
+        val state = snap.state
+        val elapsed = snap.elapsedSeconds
+        if (snap.reachedEnd) {
             settle(FocusEndReason.COUNTDOWN_FINISHED)
             return
         }
-        val elapsed = ticked.elapsedSeconds(current)
-        if (ticked.isBreak) {
+        if (state.isBreak) {
             settle(FocusEndReason.MANUAL_STOP)
             return
         }
-        when (ticked.mode) {
+        when (state.mode) {
             TimerMode.COUNTUP -> {
                 if (elapsed < 30 && settings.value.ignoreShortFocus) {
                     settle(FocusEndReason.DISCARDED)
                 } else {
                     // 冻结计时，避免用户停留在弹窗时继续累计
-                    freezeForDialog()
+                    controller.freezeForDialog()
                     recordPrompt.value = RecordPrompt(
                         taskId = selectedTask.value,
                         taskTitle = currentTask()?.title,
                         mode = "countup",
-                        plannedSeconds = ticked.plannedSeconds,
+                        plannedSeconds = state.plannedSeconds,
                         actualSeconds = elapsed,
-                        startedAt = ticked.startedAtEpoch,
-                        endedAt = System.currentTimeMillis(),
-                        interruptionCount = ticked.interruptionCount,
+                        startedAt = state.startedAtEpoch,
+                        endedAt = snap.nowWall,
+                        interruptionCount = state.interruptionCount,
                     )
                 }
             }
             TimerMode.COUNTDOWN -> {
-                if (elapsed >= ticked.plannedSeconds) {
+                if (elapsed >= state.plannedSeconds) {
                     settle(FocusEndReason.COUNTDOWN_FINISHED)
                 } else {
-                    freezeForDialog()
+                    controller.freezeForDialog()
                     stopConfirm.value = StopConfirm(
                         actualSeconds = elapsed,
-                        plannedSeconds = ticked.plannedSeconds,
-                        strict = ticked.strict,
+                        plannedSeconds = state.plannedSeconds,
+                        strict = state.strict,
                     )
                 }
             }
@@ -366,25 +330,19 @@ class FocusTimerViewModel @Inject constructor(
         stopConfirm.value = null
         if (!dialogFrozen) return
         dialogFrozen = false
-        val state = timer.value ?: return
-        if (state.phase != TimerPhase.PAUSED) return
-        val current = SystemClock.elapsedRealtime()
-        val resumed = state.copy(phase = TimerPhase.RUNNING, runningSince = current)
-        timer.value = resumed
-        now.value = current
-        FocusTimerStore.save(context, resumed, selectedTask.value)
-        updateLive(resumed, current)
-        scheduleFallback(resumed, current)
+        controller.resumeFromDialog()
     }
 
     fun confirmStop() {
         stopConfirm.value = null
         dialogFrozen = false
-        val state = timer.value ?: return
-        val elapsed = state.elapsedSeconds(SystemClock.elapsedRealtime())
+        val snap = controller.snapshot() ?: return
         settle(
-            if (elapsed >= state.plannedSeconds) FocusEndReason.COUNTDOWN_FINISHED
-            else FocusEndReason.MANUAL_STOP,
+            if (snap.elapsedSeconds >= snap.state.plannedSeconds) {
+                FocusEndReason.COUNTDOWN_FINISHED
+            } else {
+                FocusEndReason.MANUAL_STOP
+            },
         )
     }
 
@@ -409,14 +367,16 @@ class FocusTimerViewModel @Inject constructor(
     }
 
     fun resetTimer() {
-        if (timer.value == null) return
-        clearRuntime()
+        if (controller.timer.value == null) return
+        controller.clear()
+        audio.stop()
+        audioPlaying.value = false
+        audioTrack.value = FocusAudioOption.NONE
         dialogFrozen = false
         settlementGeneration++
         summary.value = null
         recordPrompt.value = null
         stopConfirm.value = null
-        now.value = SystemClock.elapsedRealtime()
     }
 
     fun setKeepScreenOn(enabled: Boolean) {
@@ -458,15 +418,14 @@ class FocusTimerViewModel @Inject constructor(
         activeTasks.value.firstOrNull { it.id == selectedTask.value }
 
     /**
-     * 统一结算入口。先清理计时 UI，再把数据写入交给 UseCase；
-     * 这样即使数据库较慢，界面也不会停留在 FINISHED 状态。
+     * 统一结算入口：先取走计时快照并清理运行时，再把数据写入交给 UseCase。
+     * 写入挂在应用级作用域上，退出页面也不会中断。
      */
     private fun settle(reason: FocusEndReason) {
-        val state = timer.value ?: return
-        val current = SystemClock.elapsedRealtime()
-        val stopped = TimerEngine.stop(state, current)
-        val elapsed = stopped.elapsedSeconds(current)
-        val nowWall = System.currentTimeMillis()
+        val snap = controller.snapshot() ?: return
+        val stopped = snap.state
+        val elapsed = snap.elapsedSeconds
+        val nowWall = snap.nowWall
         // 倒计时自然结束时，真实结束时刻是「开始 + 计划时长」；
         // 若进程在后台被杀后才恢复，不能用恢复时刻把跨天归属算错。
         val scheduledEnd = stopped.startedAtEpoch + stopped.plannedSeconds * 1000L
@@ -488,19 +447,14 @@ class FocusTimerViewModel @Inject constructor(
         )
         val generation = ++settlementGeneration
 
-        timer.value = null
-        now.value = current
-        lastNotifiedSecond = -1
+        controller.clear()
         dialogFrozen = false
         recordPrompt.value = null
         stopConfirm.value = null
         summary.value = null
-        live.cancel()
-        fallback.cancel()
         audio.stop()
         audioPlaying.value = false
         audioTrack.value = FocusAudioOption.NONE
-        FocusTimerStore.clear(context)
 
         if (stopped.isBreak) {
             summary.value = SessionSummary(
@@ -568,62 +522,6 @@ class FocusTimerViewModel @Inject constructor(
                 }
             }
         }
-    }
-
-    private fun clearRuntime() {
-        live.cancel()
-        fallback.cancel()
-        audio.stop()
-        audioPlaying.value = false
-        audioTrack.value = FocusAudioOption.NONE
-        FocusTimerStore.clear(context)
-        timer.value = null
-        lastNotifiedSecond = -1
-    }
-
-    /** 弹窗期间冻结计时（不增加 interruptionCount），避免后台继续累计。 */
-    private fun freezeForDialog() {
-        val state = timer.value ?: return
-        if (state.phase != TimerPhase.RUNNING) {
-            dialogFrozen = false
-            return
-        }
-        val current = SystemClock.elapsedRealtime()
-        val frozen = state.copy(
-            phase = TimerPhase.PAUSED,
-            accumulatedMillis = state.elapsedMillis(current),
-            runningSince = null,
-        )
-        timer.value = frozen
-        now.value = current
-        dialogFrozen = true
-        FocusTimerStore.save(context, frozen, selectedTask.value)
-        fallback.cancel()
-        updateLive(frozen, current)
-    }
-
-    private fun scheduleFallback(state: TimerState, nowMono: Long) {
-        fallback.cancel()
-        if (state.phase != TimerPhase.RUNNING || state.mode != TimerMode.COUNTDOWN) return
-        val remaining = state.remainingMillis(nowMono)
-        val title = if (state.isBreak) "休息" else (currentTask()?.title ?: "自由专注")
-        fallback.schedule(
-            taskTitle = title,
-            triggerAtMillis = System.currentTimeMillis() + remaining + 60_000L,
-            isBreak = state.isBreak,
-        )
-    }
-
-    private fun updateLive(state: TimerState, nowMono: Long) {
-        if (!settings.value.notificationsEnabled) {
-            live.cancel()
-            return
-        }
-        if (state.isBreak) {
-            live.update(state, nowMono, "休息一下")
-            return
-        }
-        live.update(state, nowMono, currentTask()?.title ?: "自由专注")
     }
 
     override fun onCleared() {

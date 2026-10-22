@@ -39,6 +39,11 @@ class ReminderScheduler @Inject constructor(
         reminders.all().filter { it.enabled }.forEach { schedule(it) }
     }
 
+    /** 清除所有已排期提醒（清空数据 / 重置时用）。 */
+    suspend fun cancelAll() {
+        reminders.all().forEach { cancel(it.id) }
+    }
+
     fun schedule(rule: ReminderRule) {
         if (!rule.enabled) {
             cancel(rule.id)

@@ -167,6 +167,9 @@ class SyncEngine @Inject constructor(
                 applySettings(latestSettings!!)
             }
 
+            // 合并后按专注记录重算番茄账本，避免各设备 +1 后互相覆盖造成漂移
+            tasks.recountCompletedPomos()
+
             // 合并后把本地快照推回自己的文件
             val snapshot = snapshots.create()
             val ownName = ownFileName(local.deviceId)
@@ -234,14 +237,36 @@ class SyncEngine @Inject constructor(
                 remoteChanged && localChanged -> {
                     // 双方都改过：保留本地版本，远端版本另存为冲突副本
                     if (r.deletedAt == null) {
+                        val copyId = UUID.randomUUID().toString()
                         val copy = r.copy(
-                            id = UUID.randomUUID().toString(),
+                            id = copyId,
                             title = r.title + "（冲突副本）",
                             parentId = null,
                             createdAt = now,
                             updatedAt = now,
                         )
                         tasks.upsert(copy.toDomain())
+                        // 冲突副本必须带上自己的规则，否则会变成一条没有习惯/目标/提醒的裸任务
+                        remote.habitRules.firstOrNull { it.taskId == r.id }?.let {
+                            tasks.upsertHabitRule(it.copy(taskId = copyId).toDomain())
+                        }
+                        remote.goalRules.firstOrNull { it.taskId == r.id }?.let {
+                            tasks.upsertGoalRule(it.copy(taskId = copyId).toDomain())
+                        }
+                        remote.reminders.firstOrNull { it.taskId == r.id }?.let {
+                            reminders.upsert(
+                                it.copy(id = UUID.randomUUID().toString(), taskId = copyId).toDomain(),
+                            )
+                        }
+                        val childCopies = remote.subTasks
+                            .filter { it.parentTaskId == r.id }
+                            .map { it.copy(id = UUID.randomUUID().toString(), parentTaskId = copyId) }
+                        if (childCopies.isNotEmpty()) {
+                            tasks.restoreAll(
+                                TaskBundle(subTasks = childCopies.map { it.toDomain() }),
+                                overwrite = false,
+                            )
+                        }
                     }
                     report += MergeReport(conflicts = 1)
                 }

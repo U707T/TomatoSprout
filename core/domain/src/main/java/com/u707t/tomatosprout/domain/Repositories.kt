@@ -33,6 +33,7 @@ interface TaskRepository {
     suspend fun setStatus(id: String, status: TaskStatus, updatedAt: Long)
     suspend fun softDelete(id: String, updatedAt: Long)
     suspend fun incrementCompletedPomos(id: String, delta: Int, updatedAt: Long)
+    suspend fun recountCompletedPomos()
     suspend fun updateSortOrder(id: String, sortOrder: Int, updatedAt: Long)
 
     suspend fun habitRule(taskId: String): HabitRule?

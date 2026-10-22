@@ -108,6 +108,7 @@ class ReminderNotifier @Inject constructor(@ApplicationContext private val conte
             .setContentIntent(ContentIntents.openApp(context))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
         NotificationManagerCompat.from(context)
-            .notify(NotificationIds.REMINDER_BASE + (ruleId.hashCode() and 0xFF), builder.build())
+            // hashCode 后 16 位，256 槽改 65536 槽，降低多习惯提醒 id 碰撞概率
+            .notify(NotificationIds.REMINDER_BASE + (ruleId.hashCode() and 0xFFFF), builder.build())
     }
 }

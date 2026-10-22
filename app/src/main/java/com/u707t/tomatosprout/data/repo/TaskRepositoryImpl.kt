@@ -38,6 +38,7 @@ class TaskRepositoryImpl @Inject constructor(
     override suspend fun setStatus(id: String, status: TaskStatus, updatedAt: Long) = tasks.setStatus(id, status.name, updatedAt)
     override suspend fun softDelete(id: String, updatedAt: Long) = tasks.softDelete(id, updatedAt)
     override suspend fun incrementCompletedPomos(id: String, delta: Int, updatedAt: Long) = tasks.incrementCompletedPomos(id, delta, updatedAt)
+    override suspend fun recountCompletedPomos() = tasks.recountCompletedPomos()
     override suspend fun updateSortOrder(id: String, sortOrder: Int, updatedAt: Long) = tasks.updateSortOrder(id, sortOrder, updatedAt)
 
     override suspend fun habitRule(taskId: String): HabitRule? = habits.get(taskId)?.toDomain()

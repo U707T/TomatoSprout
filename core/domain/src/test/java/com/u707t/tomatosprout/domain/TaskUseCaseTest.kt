@@ -79,6 +79,7 @@ class TaskUseCaseTest {
         }
 
         override suspend fun incrementCompletedPomos(id: String, delta: Int, updatedAt: Long) = Unit
+        override suspend fun recountCompletedPomos() = Unit
 
         override suspend fun updateSortOrder(id: String, sortOrder: Int, updatedAt: Long) {
             val index = items.indexOfFirst { it.id == id }

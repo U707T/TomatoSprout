@@ -10,11 +10,13 @@ import com.u707t.tomatosprout.domain.TaskDisplay
 import com.u707t.tomatosprout.domain.attributedLocalDate
 import com.u707t.tomatosprout.domain.today
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import java.time.DayOfWeek
 import java.time.Instant
@@ -64,6 +66,8 @@ class StatsViewModel @Inject constructor(
             else -> StatsUiState.Content(data, buildDashboard(data, f))
         }
     }
+        // 聚合在 Default 上算，避免多年记录时在主线程做整表分组
+        .flowOn(Dispatchers.Default)
         .catch { emit(StatsUiState.Error(it.message ?: "统计加载失败")) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUiState.Loading)
 
@@ -173,6 +177,7 @@ class StatsViewModel @Inject constructor(
         // 日均与「高效时段」都必须用同一份 inRange：否则切到「日/周」时，
         // 卡片底部仍显示全时段平均值，口径互相打架。
         val focusDays = inRange
+            .filter { it.actualSeconds > 0 }
             .map { it.attributedLocalDate(zone) }
             .distinct()
             .size

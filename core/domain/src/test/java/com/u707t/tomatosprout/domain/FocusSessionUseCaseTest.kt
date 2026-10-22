@@ -298,6 +298,8 @@ class FocusSessionUseCaseTest {
             }
         }
 
+        override suspend fun recountCompletedPomos() = Unit
+
         override suspend fun updateSortOrder(id: String, sortOrder: Int, updatedAt: Long) = Unit
         override suspend fun habitRule(taskId: String): HabitRule? = habits[taskId]
         override suspend fun goalRule(taskId: String): GoalRule? = goals[taskId]

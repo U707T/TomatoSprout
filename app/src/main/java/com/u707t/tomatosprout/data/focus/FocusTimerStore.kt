@@ -1,4 +1,4 @@
-package com.u707t.tomatosprout.ui.focus
+package com.u707t.tomatosprout.data.focus
 
 import android.content.Context
 import android.os.SystemClock

@@ -1,5 +1,6 @@
 package com.u707t.tomatosprout.data.reset
 
+import android.content.Context
 import com.u707t.tomatosprout.data.db.BadgeDao
 import com.u707t.tomatosprout.data.db.CheckInDao
 import com.u707t.tomatosprout.data.db.FocusDao
@@ -8,7 +9,10 @@ import com.u707t.tomatosprout.data.db.SubTaskDao
 import com.u707t.tomatosprout.data.db.SyncDao
 import com.u707t.tomatosprout.data.db.TaskDao
 import com.u707t.tomatosprout.data.db.WishDao
+import com.u707t.tomatosprout.data.focus.FocusTimerStore
 import com.u707t.tomatosprout.domain.AppClock
+import com.u707t.tomatosprout.notify.ReminderScheduler
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,6 +22,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class DataResetManager @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val tasks: TaskDao,
     private val subTasks: SubTaskDao,
     private val checkIns: CheckInDao,
@@ -26,10 +31,14 @@ class DataResetManager @Inject constructor(
     private val badges: BadgeDao,
     private val reminders: ReminderDao,
     private val sync: SyncDao,
+    private val reminderScheduler: ReminderScheduler,
     private val clock: AppClock,
 ) {
     suspend fun resetAll() {
         val now = clock.nowMillis()
+        // 先取消已排期的 Alarm，再删规则；否则规则没了，闹钟还会白唤醒一次
+        runCatching { reminderScheduler.cancelAll() }
+        FocusTimerStore.clear(context)
         tasks.softDeleteAll(now)
         subTasks.deleteAll()
         checkIns.softDeleteAll(now)
@@ -38,5 +47,7 @@ class DataResetManager @Inject constructor(
         reminders.deleteAll()
         badges.resetUnlocks()
         sync.clearLogs()
+        // 专注被软删除后，实际番茄数也要归零
+        tasks.recountCompletedPomos()
     }
 }

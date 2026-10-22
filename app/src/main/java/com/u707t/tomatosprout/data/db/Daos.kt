@@ -42,6 +42,23 @@ interface TaskDao {
     @Query("UPDATE tasks SET completedPomos = completedPomos + :delta, updatedAt = :at WHERE id = :id")
     suspend fun incrementCompletedPomos(id: String, delta: Int, at: Long)
 
+    /**
+     * 按专注记录重算「实际番茄数」。任务行会跨设备合并，单靠 +1 会漂移；
+     * 同步 / 导入 / 清空数据后调用一次，把账本拉回唯一事实来源。
+     */
+    @Query(
+        """
+        UPDATE tasks SET completedPomos = (
+            SELECT COUNT(*) FROM focus_sessions f
+            WHERE f.taskId = tasks.id
+              AND f.deletedAt IS NULL
+              AND f.mode = 'pomodoro'
+              AND COALESCE(f.outcome, 'completed') = 'completed'
+        )
+        """,
+    )
+    suspend fun recountCompletedPomos()
+
     @Query("UPDATE tasks SET sortOrder = :sortOrder, updatedAt = :at WHERE id = :id")
     suspend fun updateSortOrder(id: String, sortOrder: Int, at: Long)
 
