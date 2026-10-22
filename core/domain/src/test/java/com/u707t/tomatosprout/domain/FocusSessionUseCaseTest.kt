@@ -34,6 +34,11 @@ class FocusSessionUseCaseTest {
         val tasks = FakeTaskRepository()
         val checkIns = FakeCheckInRepository()
         val focus = FakeFocusRepository()
+        var badgeRefreshes = 0
+        val badges = BadgeRefresher {
+            badgeRefreshes++
+            emptyList()
+        }
         val checkInUseCase: CheckInUseCase
         val useCase: FocusSessionUseCase
 
@@ -47,12 +52,8 @@ class FocusSessionUseCaseTest {
                     startDate = day.minusDays(30),
                 )
             }
-            checkInUseCase = CheckInUseCase(
-                tasks, checkIns, focus, BadgeRefresher { emptyList() }, clock,
-            )
-            useCase = FocusSessionUseCase(
-                focus, tasks, checkInUseCase, BadgeRefresher { emptyList() }, clock,
-            )
+            checkInUseCase = CheckInUseCase(tasks, checkIns, badges, clock)
+            useCase = FocusSessionUseCase(focus, tasks, checkInUseCase, badges, clock)
         }
     }
 
@@ -241,6 +242,15 @@ class FocusSessionUseCaseTest {
         assertFalse(result.interrupted)
         assertEquals(0, f.tasks.items.single().completedPomos)
         assertEquals(1200, f.focus.items.single().actualSeconds)
+    }
+
+    @Test
+    fun `countdown completion refreshes badges exactly once`() = runBlocking {
+        val f = Fixture()
+        f.useCase.settle(input(f.task, at(day, 9, 0), at(day, 9, 25)))
+
+        // 打卡内部不再刷新；结算在 FocusSession 落库后统一刷新一次
+        assertEquals(1, f.badgeRefreshes)
     }
 
     @Test

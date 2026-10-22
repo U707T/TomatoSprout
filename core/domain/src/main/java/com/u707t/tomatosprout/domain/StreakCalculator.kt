@@ -53,12 +53,13 @@ object HabitSchedule {
 
 object StreakCalculator {
     fun countOn(checkIns: List<CheckIn>, taskId: String, date: LocalDate): Int =
-        checkIns.asSequence()
-            .filter { it.taskId == taskId && it.date == date && it.deletedAt == null }
-            .sumOf { max(1, it.count) }
+        CheckInLedger(checkIns).countOn(taskId, date)
 
     fun isMet(rule: HabitRule, checkIns: List<CheckIn>, date: LocalDate): Boolean =
-        countOn(checkIns, rule.taskId, date) >= max(1, rule.targetCountPerPeriod)
+        CheckInLedger(checkIns).isMet(rule, date)
+
+    fun isMet(rule: HabitRule, ledger: CheckInLedger, date: LocalDate): Boolean =
+        ledger.isMet(rule, date)
 
     /**
      * 当前连续天数：
@@ -67,20 +68,22 @@ object StreakCalculator {
      * - 补卡与正常打卡等价计数；
      * - 重复记录按日期合并计数，不重复累计天数。
      */
-    fun currentStreak(rule: HabitRule, checkIns: List<CheckIn>, today: LocalDate): Int {
+    fun currentStreak(rule: HabitRule, checkIns: List<CheckIn>, today: LocalDate): Int =
+        currentStreak(rule, CheckInLedger(checkIns), today)
+
+    fun currentStreak(rule: HabitRule, ledger: CheckInLedger, today: LocalDate): Int {
         if (today.isBefore(rule.startDate)) return 0
         // 跨时区旅行可能留下“未来日期”的记录；以最晚记录为基准，避免被误判为中断
-        val effective = checkIns.filter { it.taskId == rule.taskId && it.deletedAt == null }
-            .maxOfOrNull { it.date }?.let { maxOf(today, it) } ?: today
+        val effective = ledger.latestDate(rule.taskId)?.let { maxOf(today, it) } ?: today
         var cursor = effective
-        if (HabitSchedule.isScheduled(rule, effective) && !isMet(rule, checkIns, effective)) {
+        if (HabitSchedule.isScheduled(rule, effective) && !ledger.isMet(rule, effective)) {
             cursor = effective.minusDays(1)
         }
         var streak = 0
         var guard = 0
         while (!cursor.isBefore(rule.startDate) && guard < 20_000) {
             if (HabitSchedule.isScheduled(rule, cursor)) {
-                if (isMet(rule, checkIns, cursor)) streak++ else break
+                if (ledger.isMet(rule, cursor)) streak++ else break
             }
             cursor = cursor.minusDays(1)
             guard++
@@ -88,14 +91,16 @@ object StreakCalculator {
         return streak
     }
 
-    fun longestStreak(rule: HabitRule, checkIns: List<CheckIn>, today: LocalDate): Int {
+    fun longestStreak(rule: HabitRule, checkIns: List<CheckIn>, today: LocalDate): Int =
+        longestStreak(rule, CheckInLedger(checkIns), today)
+
+    fun longestStreak(rule: HabitRule, ledger: CheckInLedger, today: LocalDate): Int {
         if (today.isBefore(rule.startDate)) return 0
-        val effective = checkIns.filter { it.taskId == rule.taskId && it.deletedAt == null }
-            .maxOfOrNull { it.date }?.let { maxOf(today, it) } ?: today
+        val effective = ledger.latestDate(rule.taskId)?.let { maxOf(today, it) } ?: today
         var best = 0
         var run = 0
         for (date in HabitSchedule.datesBetween(rule, rule.startDate, effective)) {
-            if (isMet(rule, checkIns, date)) {
+            if (ledger.isMet(rule, date)) {
                 run++
                 best = max(best, run)
             } else {
@@ -112,11 +117,19 @@ object StreakCalculator {
         from: LocalDate,
         to: LocalDate,
         today: LocalDate,
+    ): Float = completionRate(rule, CheckInLedger(checkIns), from, to, today)
+
+    fun completionRate(
+        rule: HabitRule,
+        ledger: CheckInLedger,
+        from: LocalDate,
+        to: LocalDate,
+        today: LocalDate,
     ): Float {
         val end = minOf(to, today)
         val dates = HabitSchedule.datesBetween(rule, from, end)
         if (dates.isEmpty()) return 0f
-        val done = dates.count { isMet(rule, checkIns, it) }
+        val done = dates.count { ledger.isMet(rule, it) }
         return done.toFloat() / dates.size
     }
 }

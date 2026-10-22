@@ -133,6 +133,11 @@ class SyncEngine @Inject constructor(
             var latestExportedAt = 0L
 
             files.filter { it.name != ownFileName(local.deviceId) }.forEach { file ->
+                val previous = manifests[file.name]
+                // ETag 没变说明远端文件没动过：连下载都省掉（大文件同步的主要耗时在这里）
+                if (previous?.remoteEtag != null && file.etag != null && previous.remoteEtag == file.etag) {
+                    return@forEach
+                }
                 val bytes = client.get(config, client.fileUrl(config, file.name))
                 val snapshot = runCatching {
                     json.decodeFromString<SyncSnapshot>(bytes.toString(Charsets.UTF_8))
@@ -140,7 +145,6 @@ class SyncEngine @Inject constructor(
                 if (snapshot.schemaVersion > 2) throw IllegalStateException("远端备份版本过新，请升级 App")
                 // 语义哈希：忽略每次都会变化的 exportedAt，数据没变就不重复合并
                 val hash = semanticHash(snapshot)
-                val previous = manifests[file.name]
                 if (previous?.contentHash == hash) return@forEach
                 snapshot.settings?.let { remoteSettings ->
                     if (snapshot.exportedAt > latestExportedAt) {
@@ -226,8 +230,11 @@ class SyncEngine @Inject constructor(
                 return@forEach
             }
             if (localTask.toEntity() == r) return@forEach
-            val remoteChanged = lastSync == 0L || r.updatedAt > lastSync
-            val localChanged = lastSync == 0L || localTask.updatedAt > lastSync
+            // 设备时钟可能有几分钟偏差。用容差把“刚同步完又被改”的记录判成变化，
+            // 宁可多生成冲突副本，也不要因为时钟慢几秒就静默丢掉一端的数据。
+            val changedSince = if (lastSync == 0L) 0L else (lastSync - SYNC_CLOCK_SKEW_MS).coerceAtLeast(0L)
+            val remoteChanged = lastSync == 0L || r.updatedAt > changedSince
+            val localChanged = lastSync == 0L || localTask.updatedAt > changedSince
             when {
                 remoteChanged && !localChanged -> {
                     // 本地自上次同步后没动过 → 接受远端
@@ -338,6 +345,11 @@ class SyncEngine @Inject constructor(
         error = true,
         message = message.take(300),
     )
+
+    private companion object {
+        /** 允许的设备时钟偏差；超出这个窗口的修改仍然按 updatedAt 正常比较。 */
+        const val SYNC_CLOCK_SKEW_MS = 5 * 60_000L
+    }
 }
 
 @HiltWorker

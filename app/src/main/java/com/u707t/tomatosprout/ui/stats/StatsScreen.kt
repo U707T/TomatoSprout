@@ -39,11 +39,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.u707t.tomatosprout.domain.CheckInLedger
 import com.u707t.tomatosprout.domain.DayAggregate
 import com.u707t.tomatosprout.domain.HabitSchedule
 import com.u707t.tomatosprout.domain.HeatmapMetric
 import com.u707t.tomatosprout.domain.StatsData
-import com.u707t.tomatosprout.domain.StreakCalculator
 import com.u707t.tomatosprout.ui.components.EmptyState
 import com.u707t.tomatosprout.ui.components.HabitProgressRow
 import com.u707t.tomatosprout.ui.components.MonthHeatmap
@@ -120,6 +120,8 @@ private fun StatsContent(
     var year by remember(dashboard.selectedDate) { mutableIntStateOf(dashboard.selectedDate.year) }
     var yearView by remember { mutableStateOf(false) }
     var heatmapMetric by remember { mutableStateOf(HeatmapMetric.CHECK_INS) }
+    // 区间完成率要按天判断达标；先建一次索引，避免每个日期都重建一遍
+    val checkLedger = remember(data.checks) { CheckInLedger(data.checks) }
 
     val week = (6 downTo 0).map { offset ->
         val date = data.today.minusDays(offset.toLong())
@@ -131,7 +133,7 @@ private fun StatsContent(
         data.habits.forEach { habit ->
             val dates = HabitSchedule.datesBetween(habit.rule, data.today.minusDays(days.toLong() - 1), data.today)
             scheduled += dates.size
-            met += dates.count { StreakCalculator.isMet(habit.rule, data.checks, it) }
+            met += dates.count { checkLedger.isMet(habit.rule, it) }
         }
         return if (scheduled == 0) 0f else met.toFloat() / scheduled
     }

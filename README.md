@@ -48,7 +48,7 @@ WorkManager 传递引入的 `WAKE_LOCK` / `FOREGROUND_SERVICE` 已在 Manifest �
 
 ```bash
 export ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk
-./gradlew :core:domain:test          # 39 个纯 JVM 单测
+./gradlew :core:domain:test          # 45 个纯 JVM 单测
 ./gradlew :app:lintDebug             # 静态检查（0 error）
 ./gradlew :app:testDebugUnitTest
 ./gradlew :app:assembleDebug

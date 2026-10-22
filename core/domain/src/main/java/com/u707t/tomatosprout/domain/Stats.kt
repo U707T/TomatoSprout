@@ -80,6 +80,8 @@ object StatsCalculator {
         zone: ZoneId,
     ): StatsData {
         val activeChecks = checkIns.filter { it.deletedAt == null }
+        // 统计一次只建一份索引，供所有习惯的连续天数 / 完成率 / 圆满日复用
+        val ledger = CheckInLedger(activeChecks)
         // 防脏数据：时长 < 0 或结束时间非法的一律不参与统计与绘图
         val activeFocus = focusSessions.filter {
             it.deletedAt == null && it.actualSeconds >= 0 && it.endedAt > 0L
@@ -92,10 +94,10 @@ object StatsCalculator {
             HabitSnapshot(
                 task = task,
                 rule = rule,
-                currentStreak = StreakCalculator.currentStreak(rule, activeChecks, today),
-                longestStreak = StreakCalculator.longestStreak(rule, activeChecks, today),
+                currentStreak = StreakCalculator.currentStreak(rule, ledger, today),
+                longestStreak = StreakCalculator.longestStreak(rule, ledger, today),
                 completion30d = StreakCalculator.completionRate(
-                    rule, activeChecks, today.minusDays(29), today, today,
+                    rule, ledger, today.minusDays(29), today, today,
                 ),
             )
         }
@@ -114,7 +116,7 @@ object StatsCalculator {
             )
         }
 
-        val perfectDays = countPerfectDays(today, habits, activeChecks)
+        val perfectDays = countPerfectDays(today, habits, ledger)
         val goalProgress = goalRules.associate { goal ->
             val count = activeChecks.filter {
                 it.taskId == goal.taskId && !it.date.isBefore(goal.startDate) && !it.date.isAfter(goal.endDate)
@@ -150,7 +152,7 @@ object StatsCalculator {
         )
     }
 
-    private fun countPerfectDays(today: LocalDate, habits: List<HabitSnapshot>, checks: List<CheckIn>): Int {
+    private fun countPerfectDays(today: LocalDate, habits: List<HabitSnapshot>, ledger: CheckInLedger): Int {
         if (habits.isEmpty()) return 0
         val earliest = habits.minOfOrNull { it.rule.startDate } ?: return 0
         val from = maxOf(earliest, today.minusDays(730))
@@ -158,7 +160,7 @@ object StatsCalculator {
         var date = from
         while (!date.isAfter(today)) {
             val scheduled = habits.filter { HabitSchedule.isScheduled(it.rule, date) }
-            if (scheduled.isNotEmpty() && scheduled.all { StreakCalculator.isMet(it.rule, checks, date) }) {
+            if (scheduled.isNotEmpty() && scheduled.all { ledger.isMet(it.rule, date) }) {
                 perfect++
             }
             date = date.plusDays(1)
