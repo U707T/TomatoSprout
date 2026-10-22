@@ -9,7 +9,6 @@ import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
-import android.os.SystemClock
 import android.widget.RemoteViews
 import com.u707t.tomatosprout.MainActivity
 import com.u707t.tomatosprout.R
@@ -40,10 +39,6 @@ internal class FocusLiveNotification(private val context: Context) {
         val minIntervalMillis: Long,
     )
 
-    /** 能力探测含 ContentResolver 调用，缓存一份，避免每 10 秒问一次系统。 */
-    private var cachedSupport: HyperOsFocus.Support? = null
-    private var cachedAtMono = 0L
-
     fun build(state: TimerState, nowMono: Long, title: String, richSurface: Boolean): Built {
         val running = state.phase == TimerPhase.RUNNING
         val paused = state.phase == TimerPhase.PAUSED
@@ -51,6 +46,7 @@ internal class FocusLiveNotification(private val context: Context) {
         val nowWall = System.currentTimeMillis()
 
         val input = FocusIslandInput(
+            sequence = SEQUENCE.incrementAndGet(),
             title = title,
             isBreak = state.isBreak,
             paused = paused,
@@ -93,23 +89,11 @@ internal class FocusLiveNotification(private val context: Context) {
 
     private fun chooseSurface(richSurface: Boolean): Surface {
         if (!richSurface) return Surface.PLAIN
-        val support = hyperOsSupport()
-        if (support.usable) return Surface.HYPER_OS
-        // 小米设备但「焦点通知」被关掉：自定义卡片比半吊子的系统样式更稳
-        if (support.supportsFocus) return Surface.PLAIN
+        // 只要是小米系机型就带焦点通知 extras：能不能出岛由系统决定，
+        // 我们这边的协议/授权查询只用于诊断，绝不作为「是否发送」的闸门。
+        if (HyperOsFocus.isXiaomiDevice()) return Surface.HYPER_OS
         if (Build.VERSION.SDK_INT >= 36 && promotionAllowed()) return Surface.LIVE_UPDATE
         return Surface.PLAIN
-    }
-
-    private fun hyperOsSupport(): HyperOsFocus.Support {
-        val now = SystemClock.elapsedRealtime()
-        val cached = cachedSupport
-        if (cached != null && now - cachedAtMono < SUPPORT_TTL_MILLIS) return cached
-        val fresh = runCatching { HyperOsFocus.probe(context) }
-            .getOrDefault(HyperOsFocus.Support(0, null))
-        cachedSupport = fresh
-        cachedAtMono = now
-        return fresh
     }
 
     private fun promotionAllowed(): Boolean {
@@ -255,7 +239,8 @@ internal class FocusLiveNotification(private val context: Context) {
     }
 
     private companion object {
-        const val SUPPORT_TTL_MILLIS = 60_000L
+        /** 帧序号：系统据此判断哪一帧是最新状态，必须严格递增。 */
+        val SEQUENCE = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
 
         /** 澎湃 OS 焦点通知主参数的 extras key。 */
         const val EXTRA_FOCUS_PARAM = "miui.focus.param"

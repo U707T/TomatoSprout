@@ -26,7 +26,7 @@ object LiveActivityStatus {
         }
         val focus = runCatching { HyperOsFocus.probe(context) }
             .getOrDefault(HyperOsFocus.Support(0, null))
-        if (focus.supportsFocus) {
+        if (HyperOsFocus.isXiaomiDevice()) {
             val name = if (focus.supportsIsland) "超级岛" else "焦点通知"
             val settings = HyperOsFocus.notificationSettings(context)
             return when (focus.canShowFocus) {

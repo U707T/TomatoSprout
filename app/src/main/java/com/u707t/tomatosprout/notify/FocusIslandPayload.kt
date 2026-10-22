@@ -23,18 +23,25 @@ internal data class FocusIslandInput(
     /** 正计时运行中：开始时刻（墙钟毫秒）。 */
     val startEpochMillis: Long?,
     val nowEpochMillis: Long,
+    /** 单调递增的序号，系统据此判断哪一帧是最新状态。 */
+    val sequence: Long = 0L,
     val accentColor: String = FocusIslandPayload.ACCENT,
 )
 
 /**
  * 澎湃 OS 超级岛 / 焦点通知的 `miui.focus.param` 载荷。
  *
- * 字段取自澎湃 OS 系统界面自己的焦点模板（`param_v2` + 内嵌 `param_island`），
- * 关键点是 [timerInfo]：只给系统一个「结束时刻 + 当前时刻」，
- * 由 SystemUI 自己走秒，本应用不需要每秒重发通知，进程被回收后岛上的秒数也不会停。
+ * 写法对齐多个**已在真机上出岛**的第三方实现，而不是照抄系统 App 的样例：
  *
- * 模板是厂商私有协议，字段名一旦对不上，系统只会忽略对应块（最差退回普通通知），
- * 所以这里保持「缺字段而不是错字段」的写法：不确定的键宁可不写。
+ * - 只保留 `param_v2` 一层（系统 App 的样例里还有一堆顶层平铺字段，第三方用不到）；
+ * - 必带 `sequence`（否则系统把后续更新当成旧帧丢掉）；
+ * - 必带 `filterWhenNoPermission: false`（否则没拿到焦点通知授权时整帧被过滤）；
+ * - `islandProperty = 2`（交互型岛），`islandTimeout` 按剩余时长给；
+ * - `timerInfo` 同时写 `timerSystemCurrent` 与 `timerCurrent`（官方字段表与样例不一致）；
+ * - 正计时 `timerType = 1`，倒计时 `-1`，暂停不给计时参数。
+ *
+ * 模板是厂商私有协议，字段名对不上时系统只会忽略对应块（最差退回普通通知），
+ * 所以这里保持「缺字段而不是错字段」的写法。
  */
 internal object FocusIslandPayload {
 
@@ -54,33 +61,31 @@ internal object FocusIslandPayload {
     /** 焦点通知协议版本，1 为当前模板。 */
     private const val PROTOCOL = 1
 
-    /** 秒数显示上限，避免异常状态渲染出超长字符串。 */
+    /** 业务标识；系统只做透传，不认也无副作用。 */
+    private const val BUSINESS = "pomodoro"
+
+    /** 岛最长驻留 12 小时，防止异常状态把岛钉死。 */
+    private const val MAX_ISLAND_TIMEOUT = 43_200
+
     private const val MAX_CLOCK_SECONDS = 24 * 3600
 
     fun build(input: FocusIslandInput): JsonObject {
-        val progress = progress(input)
         val timer = timerInfo(input)
         val status = statusLabel(input)
         val headline = headline(input)
 
         return buildJsonObject {
+            // 顶层留一份最小镜像：OS2 的焦点通知按顶层字段取 ticker / 计时参数
             put("protocol", PROTOCOL)
-            put("scene", "timer")
-            put("business", "pomodoro")
             put("ticker", headline)
-            // 顶层 content 只放状态：秒数由 timerInfo 交给系统走，
-            // 这里再写一遍时间就会在两次刷新之间变成过期文本
             put("content", status)
-            put("enableFloat", true)
-            put("updatable", true)
-            // OS2 的状态栏焦点文字也要一份计时参数，没有它就只有一行静态文字
             timer?.let { info ->
                 put("timerType", info.getValue("timerType"))
                 put("timerWhen", info.getValue("timerWhen"))
                 put("timerSystemCurrent", info.getValue("timerSystemCurrent"))
                 info["timerTotal"]?.let { put("timerTotal", it) }
             }
-            put("param_v2", paramV2(input, progress, status, headline, timer))
+            put("param_v2", paramV2(input, status, headline, timer))
         }
     }
 
@@ -91,7 +96,7 @@ internal object FocusIslandPayload {
         return ((elapsed * PROGRESS_MAX) / input.plannedSeconds).coerceIn(0, PROGRESS_MAX)
     }
 
-    /** 大岛上的等宽数字：倒计时显示剩余，正计时显示已过去。 */
+    /** 岛上的等宽数字：倒计时显示剩余，正计时显示已过去。 */
     fun displaySeconds(input: FocusIslandInput): Int =
         if (input.countUp) input.elapsedSeconds else input.remainingSeconds
 
@@ -131,40 +136,52 @@ internal object FocusIslandPayload {
         return if (input.countUp) {
             val start = input.startEpochMillis ?: return null
             buildJsonObject {
-                put("timerType", 0) // 0 = 正计时
+                put("timerType", 1) // 1 = 正计时（与系统录音机 / 训练计时一致）
                 put("timerWhen", start)
+                put("timerTotal", 0L)
                 put("timerSystemCurrent", input.nowEpochMillis)
+                put("timerCurrent", input.nowEpochMillis)
             }
         } else {
             val end = input.endEpochMillis ?: return null
             buildJsonObject {
                 put("timerType", -1) // -1 = 倒计时
                 put("timerWhen", end)
-                put("timerSystemCurrent", input.nowEpochMillis)
                 put("timerTotal", input.plannedSeconds.coerceAtLeast(0) * 1000L)
+                put("timerSystemCurrent", input.nowEpochMillis)
+                put("timerCurrent", input.nowEpochMillis)
             }
         }
     }
 
+    /** 岛自动收起的时间（秒）：比剩余时长多留 5 分钟，避免计时结束时岛还挂着。 */
+    fun islandTimeoutSeconds(input: FocusIslandInput): Int {
+        if (input.paused || input.countUp) return MAX_ISLAND_TIMEOUT
+        return (input.remainingSeconds + 300).coerceIn(60, MAX_ISLAND_TIMEOUT)
+    }
+
     private fun paramV2(
         input: FocusIslandInput,
-        progress: Int,
         status: String,
         headline: String,
         timer: JsonObject?,
     ): JsonObject = buildJsonObject {
         put("protocol", PROTOCOL)
-        put("scene", "timer")
-        put("business", "pomodoro")
-        put("ticker", headline)
+        put("business", BUSINESS)
         put("updatable", true)
         put("enableFloat", true)
+        put("islandFirstFloat", true)
+        // 没有焦点通知授权时不要把整帧过滤掉：能显示多少显示多少
+        put("filterWhenNoPermission", false)
+        put("sequence", input.sequence)
+        put("ticker", headline)
         put("aodTitle", headline)
         put("aodPic", PIC_MAIN)
         put("highlightInfo", buildJsonObject {
             put("type", 1) // 1 = 时间类型，配合 timerInfo 显示大号数字
             put("subContent", if (input.paused) status else input.title.trim().ifBlank { status })
             put("colorSubContent", input.accentColor)
+            put("colorSubContentDark", input.accentColor)
             put("picFunction", PIC_MAIN)
             timer?.let { put("timerInfo", it) }
         })
@@ -172,46 +189,52 @@ internal object FocusIslandPayload {
             put("type", 2) // 2 = 复杂提示行
             put("title", status)
             put("content", durationLabel(input))
+            put("colorContent", "#99000000")
+            put("colorContentDark", "#80FFFFFF")
         })
         put("actions", buildJsonArray {
-            add(buildJsonObject { put("type", 0); put("action", ACTION_TOGGLE) })
-            add(buildJsonObject { put("type", 0); put("action", ACTION_STOP) })
+            add(action(ACTION_TOGGLE, input.accentColor))
+            add(action(ACTION_STOP, "#8A8078"))
         })
         put("param_island", buildJsonObject {
-            put("islandProperty", 1) // 1 = 信息展示型；0 只在 OS4 闪一次，2 是系统级交互
-            put("islandOrder", true)
-            put("expandedTime", 60)
+            put("islandProperty", 2) // 2 = 交互操作型岛；0 只在 OS4 闪一次
+            put("islandTimeout", islandTimeoutSeconds(input))
             put("bigIslandArea", buildJsonObject {
                 put("imageTextInfoLeft", buildJsonObject {
                     put("type", 1)
-                    put("picInfo", buildJsonObject {
-                        put("type", 1)
-                        put("pic", PIC_MAIN)
+                    put("picInfo", picInfo())
+                    put("textInfo", buildJsonObject {
+                        put("title", status)
+                        put("showHighlightColor", true)
                     })
                 })
-                if (timer != null) {
-                    put("sameWidthDigitInfo", buildJsonObject { put("timerInfo", timer) })
-                } else {
-                    // 暂停：没有计时参数，用一行文字占住大岛，避免只剩一个图标
-                    put("textInfo", buildJsonObject { put("title", status) })
-                }
-            })
-            put("smallIslandArea", buildJsonObject {
-                put("combinePicInfo", buildJsonObject {
-                    put("picInfo", buildJsonObject {
-                        put("type", 1)
-                        put("pic", PIC_MAIN)
-                    })
-                    put("progressInfo", buildJsonObject {
-                        put("progress", progress)
-                        put("colorReach", input.accentColor)
-                        put("colorUnReach", "#33FFFFFF")
-                        put("isCCW", false)
-                    })
+                put("sameWidthDigitInfo", buildJsonObject {
+                    if (timer != null) {
+                        put("timerInfo", timer)
+                    } else {
+                        // 暂停：没有计时参数，用静态数字占住大岛，避免只留一个图标
+                        put("digit", clock(input))
+                    }
+                    put("showHighlightColor", true)
                 })
             })
+            put("smallIslandArea", buildJsonObject { put("picInfo", picInfo()) })
         })
-        put("islandFirstFloat", true)
+    }
+
+    private fun action(key: String, color: String): JsonObject = buildJsonObject {
+        put("type", 0)
+        put("action", key)
+        put("actionTitleColor", "#FFFFFF")
+        put("actionTitleColorDark", "#FFFFFF")
+        put("actionBgColor", color)
+        put("actionBgColorDark", color)
+    }
+
+    private fun picInfo(): JsonObject = buildJsonObject {
+        put("type", 1)
+        put("pic", PIC_MAIN)
+        put("picDark", PIC_MAIN)
     }
 
     private fun durationLabel(input: FocusIslandInput): String {

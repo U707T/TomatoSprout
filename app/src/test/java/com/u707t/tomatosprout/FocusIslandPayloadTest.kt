@@ -3,6 +3,7 @@ package com.u707t.tomatosprout
 import com.u707t.tomatosprout.notify.FocusIslandInput
 import com.u707t.tomatosprout.notify.FocusIslandPayload
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -45,7 +46,8 @@ class FocusIslandPayloadTest {
         val json = FocusIslandPayload.build(countdown())
 
         assertEquals(1, json.int("protocol"))
-        assertEquals("timer", json.str("scene"))
+        // 第三方帧不带 scene：认不出的场景会让系统整帧不渲染
+        assertFalse(json.containsKey("scene"))
         assertEquals(-1, json.int("timerType"))
         assertEquals(now + 900_000L, json.long("timerWhen"))
         assertEquals(now, json.long("timerSystemCurrent"))
@@ -60,22 +62,10 @@ class FocusIslandPayloadTest {
     }
 
     @Test
-    fun `progress and small island ring use the same clamped percentage`() {
-        val json = FocusIslandPayload.build(countdown())
-        val ring = json.obj(
-            "param_v2", "param_island", "smallIslandArea", "combinePicInfo", "progressInfo",
-        )
-        assertEquals(40, ring.int("progress"))
-        assertEquals("#E0553F", ring.str("colorReach"))
-
+    fun `progress is clamped and never divides by zero`() {
+        assertEquals(40, FocusIslandPayload.progress(countdown()))
         // 超时也不会画出 100 以上
-        val overflowing = countdown(elapsed = 9_999, remaining = 0)
-        val overflow = FocusIslandPayload.build(overflowing)
-        assertEquals(100, FocusIslandPayload.progress(overflowing))
-        assertEquals(100, overflow.obj(
-            "param_v2", "param_island", "smallIslandArea", "combinePicInfo", "progressInfo",
-        ).int("progress"))
-
+        assertEquals(100, FocusIslandPayload.progress(countdown(elapsed = 9_999, remaining = 0)))
         // 时长为 0（理论上不会出现）不除零
         val zero = FocusIslandInput(
             title = "x", isBreak = false, paused = false, countUp = false,
@@ -86,7 +76,28 @@ class FocusIslandPayloadTest {
     }
 
     @Test
-    fun `paused payload stops ticking but keeps the ring`() {
+    fun `island frame keeps the fields that make hyperos accept it`() {
+        val json = FocusIslandPayload.build(countdown().copy(sequence = 42L))
+        val island = json.obj("param_v2", "param_island")
+        // 2 = 交互型岛；0 在 OS4 上只闪一次
+        assertEquals(2, island.int("islandProperty"))
+        assertEquals(1200, island.int("islandTimeout")) // 900 秒剩余 + 300 秒余量
+        // 没有焦点通知授权时也不该被整帧过滤
+        assertEquals(false, json.obj("param_v2").getValue("filterWhenNoPermission").jsonPrimitive.boolean)
+        assertEquals(42L, json.obj("param_v2").long("sequence"))
+        // 小岛只放图标：combinePicInfo 在部分版本会渲染成空白
+        assertEquals(
+            FocusIslandPayload.PIC_MAIN,
+            island.obj("smallIslandArea", "picInfo").str("pic"),
+        )
+        // 系统计时器两个字段名都要给（官方字段表与样例不一致）
+        val timer = island.obj("bigIslandArea", "sameWidthDigitInfo", "timerInfo")
+        assertEquals(now, timer.long("timerCurrent"))
+        assertEquals(now, timer.long("timerSystemCurrent"))
+    }
+
+    @Test
+    fun `paused payload stops ticking and falls back to static digits`() {
         val json = FocusIslandPayload.build(countdown(paused = true))
 
         assertFalse(json.containsKey("timerType"))
@@ -94,15 +105,10 @@ class FocusIslandPayloadTest {
         val highlight = json.obj("param_v2", "highlightInfo")
         assertFalse(highlight.containsKey("timerInfo"))
         assertEquals("已暂停", highlight.str("subContent"))
-        assertFalse(json.obj("param_v2", "param_island", "bigIslandArea").containsKey("sameWidthDigitInfo"))
-        assertEquals(
-            "已暂停",
-            json.obj("param_v2", "param_island", "bigIslandArea").obj("textInfo").str("title"),
-        )
-        assertEquals(
-            40,
-            json.obj("param_v2", "param_island", "smallIslandArea", "combinePicInfo", "progressInfo").int("progress"),
-        )
+
+        val digit = json.obj("param_v2", "param_island", "bigIslandArea", "sameWidthDigitInfo")
+        assertFalse(digit.containsKey("timerInfo"))
+        assertEquals("15:00", digit.str("digit"))
     }
 
     @Test
@@ -121,10 +127,11 @@ class FocusIslandPayloadTest {
         )
         val json = FocusIslandPayload.build(input)
 
-        assertEquals(0, json.int("timerType"))
+        assertEquals(1, json.int("timerType"))
         assertEquals(now - 125_000L, json.long("timerWhen"))
-        assertFalse(json.containsKey("timerTotal"))
-        assertFalse(json.obj("param_v2", "highlightInfo", "timerInfo").containsKey("timerTotal"))
+        // 正计时给 0，字段要在但不算总量
+        assertEquals(0L, json.long("timerTotal"))
+        assertEquals(0L, json.obj("param_v2", "highlightInfo", "timerInfo").long("timerTotal"))
         assertEquals("专注中 · 自由专注", json.obj("param_v2").str("aodTitle"))
         assertEquals("专注中", json.str("content"))
     }

@@ -39,6 +39,7 @@ class FocusLiveController @Inject constructor(@ApplicationContext private val co
         if (posted) {
             lastKey = built.key
             lastPostedAtMono = now
+            LiveActivityDiagnostics.recordPosted(context, built.surface.name, built.key)
         }
     }
 

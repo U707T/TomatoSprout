@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.10.1 — 修复超级岛完全不出岛
+
+- **根因**：v1.10.0 用「焦点协议 ≥ 2 且 `canShowFocus` 为真」当发送闸门，而协议值是 `Settings.System` 读出来的，
+  部分澎湃 OS 版本读不到就给 0 —— 结果永远退到自绘卡片，等于把上岛的路整条关掉
+- **改判定**：只要是小米 / Redmi / POCO 机型就带 `miui.focus.*` extras，能不能显示交给系统；协议与授权值只进自检报告
+- **改载荷**（按真机可用的第三方实现重写）：`param_v2` 单层、必带 `sequence` 与 `filterWhenNoPermission=false`、
+  `islandProperty=2`、`islandTimeout` 按剩余时长、`timerCurrent` 与 `timerSystemCurrent` 同时给、
+  正计时 `timerType=1`、小岛只放 `picInfo`（`combinePicInfo` 在部分版本渲染空白）
+- **新增实时活动自检**：机型 / 协议 / 焦点通知开关 / `SDK_INT_FULL` / 提升通知 / 本次档位 / 最近一次发送，
+  并提供「发送测试岛」（120 秒假专注，60 秒后自动消失）与「系统设置」跳转
+- **测试**：载荷用例 9 个，`app` 层共 14 个；`lintDebug` 0 error、`assembleDebug` 通过
+
 ## v1.10.0 — Android 16 与澎湃 OS 超级岛
 
 - **targetSdk 35 → 36**：逐条核对 Android 16 行为变更（edge-to-edge 不可 opt-out、预测式返回默认开启且 `onBackPressed` 不再回调、大屏忽略方向 / 尺寸限制、JobScheduler 配额、16 KB page size、自动主题图标）；本工程均已满足，核对表见 `docs/v1.10.0-实时活动与超级岛.md`

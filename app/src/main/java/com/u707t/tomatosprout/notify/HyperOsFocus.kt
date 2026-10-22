@@ -35,6 +35,14 @@ object HyperOsFocus {
     /** 最低支持超级岛的协议版本（OS3）。 */
     private const val PROTOCOL_ISLAND = 3
 
+    /** 小米系机型判定：只要命中就发焦点通知 extras，能不能显示交给系统决定。 */
+    fun isXiaomiDevice(): Boolean = listOf(
+        Build.MANUFACTURER.orEmpty(),
+        Build.BRAND.orEmpty(),
+    ).any { value ->
+        value.equals("xiaomi", true) || value.equals("redmi", true) || value.equals("poco", true)
+    }
+
     data class Support(
         /** 0 = 不支持；1/2 = 焦点通知；3+ = 超级岛。 */
         val protocol: Int,
@@ -52,6 +60,22 @@ object HyperOsFocus {
         protocol = protocol(context),
         canShowFocus = canShowFocus(context),
     )
+
+    /** 诊断用的一行摘要，设置页与日志共用。 */
+    fun describe(context: Context, support: Support = probe(context)): String = buildString {
+        append("小米机型：").append(if (isXiaomiDevice()) "是" else "否")
+        append("（").append(Build.MANUFACTURER).append('/').append(Build.BRAND).append("）\n")
+        append("焦点协议：").append(support.protocol)
+        append(if (support.supportsIsland) "（超级岛）" else if (support.supportsFocus) "（焦点通知）" else "（未声明）")
+        append("\n")
+        append("焦点通知开关：").append(
+            when (support.canShowFocus) {
+                true -> "已允许"
+                false -> "已关闭"
+                null -> "系统未提供查询接口"
+            },
+        )
+    }
 
     fun protocol(context: Context): Int = runCatching {
         Settings.System.getInt(context.contentResolver, KEY_PROTOCOL, 0)

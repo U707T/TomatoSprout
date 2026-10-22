@@ -12,11 +12,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -72,6 +76,7 @@ fun SettingsScreen(
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     var confirmClear by remember { mutableStateOf(false) }
+    var showLiveActivity by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
 
     val jsonExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) {
@@ -196,9 +201,7 @@ fun SettingsScreen(
                     SettingRow(
                         title = "系统实时活动",
                         subtitle = liveActivity.summary,
-                        onClick = liveActivity.settingsIntent?.let { intent ->
-                            { runCatching { context.startActivity(intent) } }
-                        },
+                        onClick = { showLiveActivity = true },
                     )
                     GroupDivider()
                     SwitchRow("免打扰时段", "该时段内不发送提醒", settings.dndEnabled, viewModel::setDnd)
@@ -282,6 +285,38 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+
+    if (showLiveActivity) {
+        AlertDialog(
+            onDismissRequest = { showLiveActivity = false },
+            title = { Text("实时活动自检") },
+            text = {
+                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        viewModel.diagnosticsReport(),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.sendTestIsland()
+                    showLiveActivity = false
+                }) { Text("发送测试岛") }
+            },
+            dismissButton = {
+                Row {
+                    viewModel.liveActivitySettingsIntent()?.let { intent ->
+                        TextButton(onClick = {
+                            runCatching { context.startActivity(intent) }
+                            showLiveActivity = false
+                        }) { Text("系统设置") }
+                    }
+                    TextButton(onClick = { showLiveActivity = false }) { Text("关闭") }
+                }
+            },
+        )
     }
 
     if (confirmClear) {
