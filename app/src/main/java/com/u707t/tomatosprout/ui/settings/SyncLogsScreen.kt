@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.ui.components.BackBar
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.components.EmptyState
 import com.u707t.tomatosprout.ui.components.SoftCard
 import java.time.Instant
@@ -43,12 +44,16 @@ import java.time.format.DateTimeFormatter
 fun SyncLogsScreen(onBack: () -> Unit, viewModel: WebDavViewModel = hiltViewModel()) {
     val logs by viewModel.logs.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val feedback = LocalFeedback.current
     LaunchedEffect(Unit) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
     Scaffold(
         topBar = {
             BackBar("同步日志", onBack, actions = {
                 if (logs.isNotEmpty()) {
-                    IconButton(onClick = viewModel::clearLogs) {
+                    IconButton(onClick = {
+                        feedback?.reject()
+                        viewModel.clearLogs()
+                    }) {
                         Icon(Icons.Default.Delete, contentDescription = "清空日志")
                     }
                 }

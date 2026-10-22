@@ -7,6 +7,7 @@ import com.u707t.tomatosprout.di.ApplicationScope
 import com.u707t.tomatosprout.domain.BadgeUseCase
 import com.u707t.tomatosprout.notify.NotificationChannels
 import com.u707t.tomatosprout.notify.ReminderScheduler
+import com.u707t.tomatosprout.ui.feedback.FeedbackController
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -18,6 +19,7 @@ class SproutApp : Application(), Configuration.Provider {
     @Inject lateinit var channels: NotificationChannels
     @Inject lateinit var badges: BadgeUseCase
     @Inject lateinit var scheduler: ReminderScheduler
+    @Inject lateinit var feedback: FeedbackController
 
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
@@ -27,6 +29,7 @@ class SproutApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         channels.ensureCreated()
+        feedback.warmUp()
         appScope.launch {
             runCatching { badges.ensureSeeded() }
             // 开机 / 应用更新由 BootReceiver 重排；这里再兜底一次，防止 OEM 清理 Alarm

@@ -88,7 +88,7 @@ import com.u707t.tomatosprout.domain.TimerEngine
 import com.u707t.tomatosprout.domain.TimerMode
 import com.u707t.tomatosprout.domain.TimerPhase
 import com.u707t.tomatosprout.ui.components.ConfirmDialog
-import com.u707t.tomatosprout.ui.components.rememberHaptics
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import kotlin.math.max
 
 private val quotes = listOf(
@@ -126,12 +126,13 @@ fun FocusTimerScreen(
     val activity = context.findActivity()
     val window = activity?.window
     val snackbar = remember { SnackbarHostState() }
-    val haptics = rememberHaptics()
+    val feedback = LocalFeedback.current
 
     // 未完成（中断 / 丢弃 / 不足 30 秒）结算后不再停在计时页：
     // Toast 说明这次没有计入打卡，然后直接回任务页。
     LaunchedEffect(Unit) {
         viewModel.exit.collect { exit ->
+            if (exit.rejected) feedback?.reject() else feedback?.tap()
             Toast.makeText(context, exit.message, Toast.LENGTH_SHORT).show()
             onExit()
         }
@@ -197,13 +198,24 @@ fun FocusTimerScreen(
     }
     LaunchedEffect(ui.error) {
         ui.error?.let {
+            feedback?.reject()
             snackbar.showSnackbar(it)
             viewModel.clearError()
         }
     }
+    // 完成 / 休息摘要出现时给一次「完成」反馈
+    LaunchedEffect(ui.summary) {
+        val summary = ui.summary ?: return@LaunchedEffect
+        if (summary.isBreak) feedback?.tap() else feedback?.confirm()
+    }
 
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
+    val backgroundScale by animateFloatAsState(
+        targetValue = if (visible) 1f else 1.06f,
+        animationSpec = tween(900),
+        label = "focusBackground",
+    )
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
         animationSpec = tween(320),
@@ -212,7 +224,7 @@ fun FocusTimerScreen(
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val start = {
-        haptics.confirm()
+        feedback?.confirm()
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -273,7 +285,10 @@ fun FocusTimerScreen(
             painter = painterResource(R.drawable.bg_focus_dawn),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.matchParentSize(),
+            modifier = Modifier.matchParentSize().graphicsLayer {
+                scaleX = backgroundScale
+                scaleY = backgroundScale
+            },
         )
 
         BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().displayCutoutPadding()) {
@@ -387,25 +402,29 @@ fun FocusTimerScreen(
                 canPause = timer == null || !(timer.strict && timer.phase == TimerPhase.RUNNING),
                 canStop = timer != null,
                 onToggleBrightness = {
-                    haptics.tap()
+                    feedback?.tap()
                     audioPanel = false
                     brightnessPanel = !brightnessPanel
                 },
                 onToggleAudio = {
-                    haptics.tap()
+                    feedback?.tap()
                     brightnessPanel = false
                     audioPanel = !audioPanel
                 },
                 onStartOrPause = {
-                    haptics.tap()
-                    if (timer == null) start() else viewModel.togglePause()
+                    if (timer == null) {
+                        start()
+                    } else {
+                        feedback?.tap()
+                        viewModel.togglePause()
+                    }
                 },
                 onReset = {
-                    haptics.tap()
+                    feedback?.tap()
                     if (elapsedSeconds > 0) resetConfirm = true else viewModel.resetTimer()
                 },
                 onStop = {
-                    haptics.tap()
+                    feedback?.tap()
                     viewModel.requestStop()
                 },
             )
@@ -429,8 +448,8 @@ fun FocusTimerScreen(
     ui.stopConfirm?.let {
         StopConfirmDialog(
             confirm = it,
-            onCancel = viewModel::cancelStop,
-            onConfirm = viewModel::confirmStop,
+            onCancel = { feedback?.tap(); viewModel.cancelStop() },
+            onConfirm = { feedback?.tap(); viewModel.confirmStop() },
             onReason = viewModel::setStopReason,
         )
     }
@@ -440,12 +459,17 @@ fun FocusTimerScreen(
             summary = it,
             breakMinutes = ui.breakMinutes,
             longBreakMinutes = ui.settings.longBreakMinutes,
-            onDismiss = viewModel::dismissSummary,
+            onDismiss = {
+                feedback?.tap()
+                viewModel.dismissSummary()
+            },
             onStartBreak = { long ->
+                feedback?.tap()
                 viewModel.dismissSummary()
                 viewModel.startBreak(long)
             },
             onStartAgain = {
+                feedback?.tap()
                 viewModel.dismissSummary()
                 start()
             },
@@ -518,6 +542,7 @@ private fun CenterBlock(
     interaction: MutableInteractionSource,
     compact: Boolean,
 ) {
+    val feedback = LocalFeedback.current
     val density = LocalDensity.current
     CompositionLocalProvider(
         LocalDensity provides Density(density.density, density.fontScale.coerceAtMost(1.25f)),
@@ -604,7 +629,10 @@ private fun CenterBlock(
                             Modifier.clickable(
                                 interactionSource = interaction,
                                 indication = null,
-                            ) { onTaskMenuChange(true) }
+                            ) {
+                                feedback?.tap()
+                                onTaskMenuChange(true)
+                            }
                         } else {
                             Modifier
                         },
@@ -640,7 +668,10 @@ private fun CenterBlock(
             ) {
                 DropdownMenuItem(
                     text = { Text("自由专注", color = Color(0xFFF1E9E2)) },
-                    onClick = { onSelectTask(null) },
+                    onClick = {
+                        feedback?.tap()
+                        onSelectTask(null)
+                    },
                 )
                 taskList.forEach { item ->
                     key(item.id) {
@@ -651,7 +682,10 @@ private fun CenterBlock(
                                     color = Color(0xFFF1E9E2),
                                 )
                             },
-                            onClick = { onSelectTask(item.id) },
+                            onClick = {
+                                feedback?.tap()
+                                onSelectTask(item.id)
+                            },
                         )
                     }
                 }
@@ -672,11 +706,15 @@ private fun CenterBlock(
 
 @Composable
 private fun StepperText(text: String, onClick: () -> Unit) {
+    val feedback = LocalFeedback.current
     val interaction = remember { MutableInteractionSource() }
     Box(
         Modifier
             .size(48.dp)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            .clickable(interactionSource = interaction, indication = null) {
+                feedback?.tap()
+                onClick()
+            },
         contentAlignment = Alignment.Center,
     ) {
         Text(text, color = Color.White.copy(alpha = 0.72f), fontSize = 20.sp)

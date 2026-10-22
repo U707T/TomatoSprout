@@ -1,10 +1,10 @@
 package com.u707t.tomatosprout.ui.components
 
-import android.os.Build
-import android.view.HapticFeedbackConstants
-import android.view.View
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -46,19 +46,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Space
 
@@ -118,6 +118,7 @@ fun BackBar(
     onBack: () -> Unit,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    val feedback = LocalFeedback.current
     Row(
         Modifier
             .fillMaxWidth()
@@ -126,7 +127,13 @@ fun BackBar(
             .padding(horizontal = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+        IconButton(
+            onClick = {
+                feedback?.tap()
+                onBack()
+            },
+            modifier = Modifier.size(48.dp),
+        ) {
             Icon(
                 Icons.Default.ArrowBack,
                 contentDescription = "返回",
@@ -165,6 +172,7 @@ fun SegmentedTabs(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val feedback = LocalFeedback.current
     Row(
         modifier
             .fillMaxWidth()
@@ -186,12 +194,20 @@ fun SegmentedTabs(
                 animationSpec = tween(180),
                 label = "segmentFg",
             )
+            val scale by animateFloatAsState(
+                targetValue = if (selected) 1f else 0.96f,
+                animationSpec = spring(dampingRatio = 0.7f, stiffness = 700f),
+                label = "segmentScale",
+            )
             Box(
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(Radii.xs))
                     .background(bg)
-                    .clickable { onSelect(index) }
+                    .clickable {
+                        feedback?.tap()
+                        onSelect(index)
+                    }
                     .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -200,6 +216,10 @@ fun SegmentedTabs(
                     style = MaterialTheme.typography.labelLarge,
                     color = fg,
                     maxLines = 1,
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    },
                 )
             }
         }
@@ -213,15 +233,40 @@ fun FilterPill(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val border = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-    val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    val feedback = LocalFeedback.current
+    val border by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        tween(160),
+        label = "pillBorder",
+    )
+    val bg by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        tween(160),
+        label = "pillBg",
+    )
+    val fg by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        tween(160),
+        label = "pillFg",
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.97f,
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 700f),
+        label = "pillScale",
+    )
     Box(
         Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(50))
             .background(bg)
             .border(1.dp, border, RoundedCornerShape(50))
-            .clickable(onClick = onClick)
+            .clickable {
+                feedback?.tap()
+                onClick()
+            }
             .padding(horizontal = Space.lg, vertical = 7.dp),
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1)
@@ -270,6 +315,11 @@ fun ThinProgress(
     track: Color = MaterialTheme.colorScheme.surfaceVariant,
     height: androidx.compose.ui.unit.Dp = 4.dp,
 ) {
+    val animated by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(420),
+        label = "thinProgress",
+    )
     Box(
         modifier
             .fillMaxWidth()
@@ -279,7 +329,7 @@ fun ThinProgress(
     ) {
         Box(
             Modifier
-                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .fillMaxWidth(animated)
                 .height(height)
                 .clip(RoundedCornerShape(50))
                 .background(color),
@@ -299,10 +349,17 @@ fun SettingRow(
     danger: Boolean = false,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val feedback = LocalFeedback.current
+    val clickModifier = onClick?.let { action ->
+        Modifier.clickable {
+            feedback?.tap()
+            action()
+        }
+    } ?: Modifier
     Row(
         modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(clickModifier)
             .heightIn(min = 56.dp)
             .padding(horizontal = Space.lg, vertical = Space.md),
         verticalAlignment = Alignment.CenterVertically,
@@ -438,6 +495,7 @@ fun IllustrationEmptyState(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
+    val feedback = LocalFeedback.current
     Column(
         modifier.fillMaxWidth().padding(horizontal = Space.xxl, vertical = Space.xxxl),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -459,7 +517,10 @@ fun IllustrationEmptyState(
         if (actionLabel != null && onAction != null) {
             Spacer(Modifier.height(Space.xl))
             Surface(
-                onClick = onAction,
+                onClick = {
+                    feedback?.tap()
+                    onAction()
+                },
                 shape = RoundedCornerShape(Radii.sm),
                 color = MaterialTheme.colorScheme.primary,
             ) {
@@ -473,37 +534,6 @@ fun IllustrationEmptyState(
             }
         }
     }
-}
-
-/** 触感反馈：打卡、删除、切换都走同一套强度，避免每个页面各写一遍。 */
-class Haptics(private val view: View) {
-    fun tap() {
-        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-    }
-
-    fun confirm() {
-        val constant = if (Build.VERSION.SDK_INT >= 30) {
-            HapticFeedbackConstants.CONFIRM
-        } else {
-            HapticFeedbackConstants.VIRTUAL_KEY
-        }
-        view.performHapticFeedback(constant)
-    }
-
-    fun reject() {
-        val constant = if (Build.VERSION.SDK_INT >= 30) {
-            HapticFeedbackConstants.REJECT
-        } else {
-            HapticFeedbackConstants.LONG_PRESS
-        }
-        view.performHapticFeedback(constant)
-    }
-}
-
-@Composable
-fun rememberHaptics(): Haptics {
-    val view = LocalView.current
-    return remember(view) { Haptics(view) }
 }
 
 /** Snackbar + 撤销：返回 true 表示用户点了撤销。 */

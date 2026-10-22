@@ -47,6 +47,7 @@ import com.u707t.tomatosprout.ui.components.LargeHeader
 import com.u707t.tomatosprout.ui.components.SegmentedTabs
 import com.u707t.tomatosprout.ui.components.SettingGroup
 import com.u707t.tomatosprout.ui.components.SettingRow
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Space
 import java.time.Instant
@@ -64,6 +65,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val hapticsEnabled by viewModel.hapticsEnabled.collectAsStateWithLifecycle()
+    val soundEnabled by viewModel.soundEnabled.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     var confirmClear by remember { mutableStateOf(false) }
@@ -119,6 +122,24 @@ fun SettingsScreen(
                         subtitle = "只保留标题、连续天数和完成状态",
                         checked = settings.simpleMode,
                         onChange = viewModel::setSimple,
+                    )
+                }
+            }
+
+            item(key = "feedback") {
+                SettingGroup(title = "反馈") {
+                    SwitchRow(
+                        title = "触感反馈",
+                        subtitle = "打卡、完成、删除使用不同强度的振动",
+                        checked = hapticsEnabled,
+                        onChange = viewModel::setHaptics,
+                    )
+                    GroupDivider()
+                    SwitchRow(
+                        title = "操作音效",
+                        subtitle = "点击、完成与错误提示音；关闭后完全静音",
+                        checked = soundEnabled,
+                        onChange = viewModel::setSound,
                     )
                 }
             }
@@ -292,6 +313,7 @@ private fun ProfileCard() {
 
 @Composable
 private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val feedback = LocalFeedback.current
     Row(
         Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
         verticalAlignment = Alignment.CenterVertically,
@@ -306,12 +328,19 @@ private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChan
                 )
             }
         }
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = {
+                feedback?.tap()
+                onChange(it)
+            },
+        )
     }
 }
 
 @Composable
 private fun NumberRow(label: String, value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
+    val feedback = LocalFeedback.current
     Row(
         Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.sm, top = Space.xs, bottom = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
@@ -325,7 +354,10 @@ private fun NumberRow(label: String, value: Int, min: Int, max: Int, onChange: (
             )
         }
         TextButton(
-            onClick = { onChange((value - 5).coerceAtLeast(min)) },
+            onClick = {
+                feedback?.tap()
+                onChange((value - 5).coerceAtLeast(min))
+            },
             enabled = value > min,
         ) { Text("−", fontSize = 20.sp) }
         Text(
@@ -334,7 +366,10 @@ private fun NumberRow(label: String, value: Int, min: Int, max: Int, onChange: (
             modifier = Modifier.width(36.dp),
         )
         TextButton(
-            onClick = { onChange((value + 5).coerceAtMost(max)) },
+            onClick = {
+                feedback?.tap()
+                onChange((value + 5).coerceAtMost(max))
+            },
             enabled = value < max,
         ) { Text("+", fontSize = 20.sp) }
     }

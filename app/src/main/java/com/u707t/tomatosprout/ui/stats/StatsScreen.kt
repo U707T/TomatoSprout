@@ -58,6 +58,7 @@ import com.u707t.tomatosprout.ui.components.SettingRow
 import com.u707t.tomatosprout.ui.components.SoftCard
 import com.u707t.tomatosprout.ui.components.WeekOverview
 import com.u707t.tomatosprout.ui.components.YearHeatmap
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Space
 import java.time.LocalDate
@@ -71,6 +72,7 @@ fun StatsScreen(
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.ui.collectAsStateWithLifecycle()
+    val feedback = LocalFeedback.current
 
     Scaffold(
         topBar = {
@@ -78,7 +80,10 @@ fun StatsScreen(
                 title = "统计",
                 eyebrow = "只保存在本机",
                 trailing = {
-                    IconButton(onClick = { onOpenHistory(null, viewModel.initialTaskFilter) }) {
+                    IconButton(onClick = {
+                        feedback?.tap()
+                        onOpenHistory(null, viewModel.initialTaskFilter)
+                    }) {
                         Icon(
                             Icons.Default.DateRange,
                             contentDescription = "历史时间轴",

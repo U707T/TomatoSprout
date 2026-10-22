@@ -1,8 +1,16 @@
 package com.u707t.tomatosprout.ui.tasks
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -72,7 +81,7 @@ import com.u707t.tomatosprout.ui.components.Metric
 import com.u707t.tomatosprout.ui.components.ProgressRing
 import com.u707t.tomatosprout.ui.components.ThinProgress
 import com.u707t.tomatosprout.ui.components.greetingFor
-import com.u707t.tomatosprout.ui.components.rememberHaptics
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.components.showUndo
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Space
@@ -107,7 +116,14 @@ fun TodoScreen(
     val addState by quickAddViewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val haptics = rememberHaptics()
+    val feedback = LocalFeedback.current
+    val fabInteraction = remember { MutableInteractionSource() }
+    val fabPressed by fabInteraction.collectIsPressedAsState()
+    val fabScale by animateFloatAsState(
+        targetValue = if (fabPressed) 0.94f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 700f),
+        label = "fabScale",
+    )
 
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var filterIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -117,7 +133,7 @@ fun TodoScreen(
     LaunchedEffect(Unit) {
         quickAddViewModel.created.collect { task ->
             showAdd = false
-            haptics.confirm()
+            feedback?.confirm()
             snackbar.showSnackbar("已创建「${task.title}」")
         }
     }
@@ -161,7 +177,7 @@ fun TodoScreen(
             if (card.todayCheckInCount > 1) {
                 pendingUncheck = card.task
             } else {
-                haptics.tap()
+                feedback?.tap()
                 viewModel.toggleCheckIn(card.task)
                 scope.launch {
                     if (snackbar.showUndo("已撤销「${card.task.title}」的打卡")) {
@@ -171,7 +187,7 @@ fun TodoScreen(
             }
             return
         }
-        haptics.confirm()
+        feedback?.confirm()
         viewModel.toggleCheckIn(card.task)
     }
 
@@ -186,7 +202,10 @@ fun TodoScreen(
                     else -> "还有 ${cards.size - doneCount} 件没完成，专注 $totalFocusMinutes 分钟"
                 },
                 trailing = {
-                    IconButton(onClick = { onOpenHistory(null) }) {
+                    IconButton(onClick = {
+                        feedback?.tap()
+                        onOpenHistory(null)
+                    }) {
                         Icon(
                             Icons.Default.DateRange,
                             contentDescription = "历史时间轴",
@@ -199,11 +218,21 @@ fun TodoScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { openAdd() },
+                onClick = {
+                    feedback?.tap()
+                    openAdd()
+                },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = RoundedCornerShape(Radii.md),
-                modifier = Modifier.navigationBarsPadding().padding(bottom = 66.dp),
+                interactionSource = fabInteraction,
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(bottom = 66.dp)
+                    .graphicsLayer {
+                        scaleX = fabScale
+                        scaleY = fabScale
+                    },
             ) {
                 Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -290,16 +319,20 @@ fun TodoScreen(
                         TaskCard(
                             card = card,
                             simple = simpleMode,
+                            modifier = Modifier.animateItem(),
                             onOpen = { onEditTask(card.task.id) },
                             onLongPress = { viewModel.showQuickActions(card.task.id) },
                             onAction = {
                                 when {
                                     card.isDone -> {
-                                        haptics.tap()
+                                        feedback?.tap()
                                         viewModel.markDone(card.task, false)
                                     }
                                     card.isCountBased -> handleCheck(card)
-                                    else -> onStartTask(card.task)
+                                    else -> {
+                                        feedback?.confirm()
+                                        onStartTask(card.task)
+                                    }
                                 }
                             },
                         )
@@ -337,7 +370,7 @@ fun TodoScreen(
                 onEditTask(quick.taskId)
             },
             onToggleDone = {
-                haptics.tap()
+                feedback?.tap()
                 ui.cards.firstOrNull { it.task.id == quick.taskId }?.task?.let { task ->
                     viewModel.markDone(task, !quick.isDone)
                 }
@@ -374,7 +407,6 @@ fun TodoScreen(
             destructive = true,
             onConfirm = {
                 pendingDelete = null
-                haptics.reject()
                 viewModel.delete(task)
             },
             onDismiss = { pendingDelete = null },
@@ -390,7 +422,6 @@ fun TodoScreen(
             destructive = true,
             onConfirm = {
                 pendingUncheck = null
-                haptics.tap()
                 viewModel.toggleCheckIn(task)
             },
             onDismiss = { pendingUncheck = null },
@@ -435,11 +466,13 @@ private fun OverviewCard(
 private fun TaskCard(
     card: TodoCardUi,
     simple: Boolean,
+    modifier: Modifier = Modifier,
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
     onAction: () -> Unit,
 ) {
     val task = card.task
+    val feedback = LocalFeedback.current
     val accent = remember(task.color) {
         runCatching { Color(task.color.toInt()) }.getOrDefault(PaletteFallback)
     }
@@ -509,9 +542,19 @@ private fun TaskCard(
                 MaterialTheme.colorScheme.outlineVariant
             },
         ),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onOpen, onLongClick = onLongPress),
+            .animateContentSize()
+            .combinedClickable(
+                onClick = {
+                    feedback?.tap()
+                    onOpen()
+                },
+                onLongClick = {
+                    feedback?.tap()
+                    onLongPress()
+                },
+            ),
     ) {
         Row(
             Modifier.padding(horizontal = Space.lg, vertical = Space.md).heightIn(min = 64.dp),
@@ -594,7 +637,18 @@ private fun TaskAction(card: TodoCardUi, accent: Color, onAction: () -> Unit) {
             modifier = Modifier.size(44.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = description, tint = fg, modifier = Modifier.size(20.dp))
+                Crossfade(
+                    targetState = icon,
+                    animationSpec = tween(180),
+                    label = "taskActionIcon",
+                ) { current ->
+                    Icon(
+                        current,
+                        contentDescription = description,
+                        tint = fg,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
     }

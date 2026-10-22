@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.ui.components.BackBar
 import com.u707t.tomatosprout.ui.components.CheckCircle
 import com.u707t.tomatosprout.ui.components.EmptyState
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Space
 
@@ -49,6 +50,7 @@ import com.u707t.tomatosprout.ui.theme.Space
 fun WishlistScreen(onBack: () -> Unit, viewModel: WishlistViewModel = hiltViewModel()) {
     var text by remember { mutableStateOf("") }
     val state by viewModel.ui.collectAsStateWithLifecycle()
+    val feedback = LocalFeedback.current
 
     Scaffold(
         topBar = { BackBar("愿望清单", onBack) },
@@ -89,6 +91,7 @@ fun WishlistScreen(onBack: () -> Unit, viewModel: WishlistViewModel = hiltViewMo
                     Surface(
                         onClick = {
                             if (text.isNotBlank()) {
+                                feedback?.confirm()
                                 viewModel.add(text)
                                 text = ""
                             }
@@ -148,7 +151,10 @@ fun WishlistScreen(onBack: () -> Unit, viewModel: WishlistViewModel = hiltViewMo
                             ) {
                                 CheckCircle(
                                     checked = done,
-                                    onClick = { viewModel.toggle(item) },
+                                    onClick = {
+                                        if (done) feedback?.tap() else feedback?.confirm()
+                                        viewModel.toggle(item)
+                                    },
                                     description = if (done) "标记为未完成" else "标记为已完成",
                                 )
                                 Text(
@@ -159,7 +165,10 @@ fun WishlistScreen(onBack: () -> Unit, viewModel: WishlistViewModel = hiltViewMo
                                     color = if (done) MaterialTheme.colorScheme.onSurfaceVariant
                                     else MaterialTheme.colorScheme.onSurface,
                                 )
-                                IconButton(onClick = { viewModel.delete(item) }) {
+                                IconButton(onClick = {
+                                    feedback?.reject()
+                                    viewModel.delete(item)
+                                }) {
                                     Icon(
                                         Icons.Default.Delete,
                                         contentDescription = "删除愿望",

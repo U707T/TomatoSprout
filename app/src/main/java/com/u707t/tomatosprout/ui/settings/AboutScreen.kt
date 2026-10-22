@@ -89,8 +89,9 @@ fun AboutScreen(onBack: () -> Unit) {
                 Text("权限", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "• 通知（可选）：习惯提醒与专注实时活动\n" +
-                        "• 网络 / 网络状态：仅在你手动触发 WebDAV 同步时使用\n\n" +
+                    "• 通知（可选）：习惯提醒与专注通知卡片\n" +
+                        "• 网络 / 网络状态：仅在你手动触发 WebDAV 同步时使用\n" +
+                        "• 振动：仅用于打卡 / 完成 / 删除的触感反馈，可在「我的 → 反馈」关闭\n\n" +
                         "不申请任何敏感权限，也没有桌面小组件；所有数据默认只保存在本机。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

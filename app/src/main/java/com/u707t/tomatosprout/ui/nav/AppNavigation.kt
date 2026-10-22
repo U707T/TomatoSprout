@@ -1,8 +1,13 @@
 package com.u707t.tomatosprout.ui.nav
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,12 +35,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -53,6 +60,8 @@ import com.u707t.tomatosprout.domain.AppSettings
 import com.u707t.tomatosprout.domain.SettingsRepository
 import com.u707t.tomatosprout.ui.badges.BadgesScreen
 import com.u707t.tomatosprout.ui.edit.HabitEditScreen
+import com.u707t.tomatosprout.ui.feedback.FeedbackController
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.focus.FocusTimerScreen
 import com.u707t.tomatosprout.ui.history.HistoryScreen
 import com.u707t.tomatosprout.ui.settings.AboutScreen
@@ -71,7 +80,10 @@ import java.time.LocalDate
 import javax.inject.Inject
 
 @HiltViewModel
-class AppViewModel @Inject constructor(settingsRepo: SettingsRepository) : ViewModel() {
+class AppViewModel @Inject constructor(
+    settingsRepo: SettingsRepository,
+    val feedback: FeedbackController,
+) : ViewModel() {
     val settings: StateFlow<AppSettings> =
         settingsRepo.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
 }
@@ -83,6 +95,7 @@ fun TomatoApp(
     viewModel: AppViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    CompositionLocalProvider(LocalFeedback provides viewModel.feedback) {
     TomatoTheme(settings.themeMode) {
         val nav = rememberNavController()
         val entry by nav.currentBackStackEntryAsState()
@@ -177,25 +190,79 @@ fun TomatoApp(
                 ) {
                     FocusTimerScreen(onExit = { nav.popBackStack() })
                 }
-                composable<EditRoute> {
+                composable<EditRoute>(
+                enterTransition = {
+                    fadeIn(tween(200)) + slideInHorizontally(tween(220)) { it / 14 }
+                },
+                exitTransition = { fadeOut(tween(150)) },
+                popEnterTransition = { fadeIn(tween(200)) },
+                popExitTransition = {
+                    fadeOut(tween(150)) + slideOutHorizontally(tween(200)) { it / 14 }
+                },
+            ) {
                     HabitEditScreen(onBack = { nav.popBackStack() })
                 }
-                composable<BadgesRoute> {
+                composable<BadgesRoute>(
+                enterTransition = {
+                    fadeIn(tween(200)) + slideInHorizontally(tween(220)) { it / 14 }
+                },
+                exitTransition = { fadeOut(tween(150)) },
+                popEnterTransition = { fadeIn(tween(200)) },
+                popExitTransition = {
+                    fadeOut(tween(150)) + slideOutHorizontally(tween(200)) { it / 14 }
+                },
+            ) {
                     BadgesScreen(onBack = { nav.popBackStack() })
                 }
-                composable<WebDavRoute> {
+                composable<WebDavRoute>(
+                enterTransition = {
+                    fadeIn(tween(200)) + slideInHorizontally(tween(220)) { it / 14 }
+                },
+                exitTransition = { fadeOut(tween(150)) },
+                popEnterTransition = { fadeIn(tween(200)) },
+                popExitTransition = {
+                    fadeOut(tween(150)) + slideOutHorizontally(tween(200)) { it / 14 }
+                },
+            ) {
                     WebDavScreen(
                         onBack = { nav.popBackStack() },
                         onOpenLogs = { nav.navigate(SyncLogsRoute) },
                     )
                 }
-                composable<SyncLogsRoute> {
+                composable<SyncLogsRoute>(
+                enterTransition = {
+                    fadeIn(tween(200)) + slideInHorizontally(tween(220)) { it / 14 }
+                },
+                exitTransition = { fadeOut(tween(150)) },
+                popEnterTransition = { fadeIn(tween(200)) },
+                popExitTransition = {
+                    fadeOut(tween(150)) + slideOutHorizontally(tween(200)) { it / 14 }
+                },
+            ) {
                     SyncLogsScreen(onBack = { nav.popBackStack() })
                 }
-                composable<WishlistRoute> {
+                composable<WishlistRoute>(
+                enterTransition = {
+                    fadeIn(tween(200)) + slideInHorizontally(tween(220)) { it / 14 }
+                },
+                exitTransition = { fadeOut(tween(150)) },
+                popEnterTransition = { fadeIn(tween(200)) },
+                popExitTransition = {
+                    fadeOut(tween(150)) + slideOutHorizontally(tween(200)) { it / 14 }
+                },
+            ) {
                     WishlistScreen(onBack = { nav.popBackStack() })
                 }
-                composable<AboutRoute> {
+                composable<AboutRoute>(
+                enterTransition = {
+                    fadeIn(tween(200)) + slideInHorizontally(tween(220)) { it / 14 }
+                },
+                exitTransition = { fadeOut(tween(150)) },
+                popEnterTransition = { fadeIn(tween(200)) },
+                popExitTransition = {
+                    fadeOut(tween(150)) + slideOutHorizontally(tween(200)) { it / 14 }
+                },
+            ) {
                     AboutScreen(onBack = { nav.popBackStack() })
                 }
             }
@@ -212,6 +279,7 @@ fun TomatoApp(
             }
         }
     }
+    }
 }
 
 private class BottomTab(
@@ -227,6 +295,7 @@ private fun BottomBar(
     items: List<BottomTab>,
     modifier: Modifier = Modifier,
 ) {
+    val feedback = LocalFeedback.current
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
@@ -247,6 +316,11 @@ private fun BottomBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 items.forEach { tab ->
+                    val iconScale by animateFloatAsState(
+                        targetValue = if (tab.selected) 1.08f else 1f,
+                        animationSpec = spring(dampingRatio = 0.6f, stiffness = 600f),
+                        label = "tabScale",
+                    )
                     val tint by animateColorAsState(
                         targetValue = if (tab.selected) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -263,7 +337,10 @@ private fun BottomBar(
                         Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .clickable(onClick = tab.onClick),
+                            .clickable {
+                                feedback?.tap()
+                                tab.onClick()
+                            },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
@@ -295,7 +372,10 @@ private fun BottomBar(
                                     tab.icon,
                                     contentDescription = tab.label,
                                     tint = tint,
-                                    modifier = Modifier.size(21.dp),
+                                    modifier = Modifier.size(21.dp).graphicsLayer {
+                                        scaleX = iconScale
+                                        scaleY = iconScale
+                                    },
                                 )
                             }
                         }

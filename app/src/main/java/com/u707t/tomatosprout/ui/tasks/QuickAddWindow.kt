@@ -1,5 +1,9 @@
 package com.u707t.tomatosprout.ui.tasks
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,12 +42,16 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -51,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.u707t.tomatosprout.ui.components.SectionCaption
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.components.SegmentedTabs
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Space
@@ -90,9 +99,22 @@ fun QuickAddWindow(
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val feedback = LocalFeedback.current
     val canCreate = state.title.isNotBlank() && !state.saving
+    var shown by remember { mutableStateOf(false) }
+    val cardScale by animateFloatAsState(
+        targetValue = if (shown) 1f else 0.94f,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 500f),
+        label = "addWindowScale",
+    )
+    val cardAlpha by animateFloatAsState(
+        targetValue = if (shown) 1f else 0f,
+        animationSpec = tween(140),
+        label = "addWindowAlpha",
+    )
 
     LaunchedEffect(Unit) {
+        shown = true
         delay(140)
         runCatching { focusRequester.requestFocus() }
     }
@@ -122,7 +144,12 @@ fun QuickAddWindow(
                 modifier = Modifier
                     .widthIn(max = 440.dp)
                     .fillMaxWidth()
-                    .heightIn(max = maxHeight),
+                    .heightIn(max = maxHeight)
+                    .graphicsLayer {
+                        scaleX = cardScale
+                        scaleY = cardScale
+                        alpha = cardAlpha
+                    },
             ) {
                 Column {
                     // 标题栏：窗口语义靠这一行和关闭按钮建立
@@ -142,6 +169,7 @@ fun QuickAddWindow(
                         }
                         IconButton(
                             onClick = {
+                                feedback?.tap()
                                 keyboard?.hide()
                                 onDismiss()
                             },
@@ -215,7 +243,10 @@ fun QuickAddWindow(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 SectionCaption("专注时长", Modifier.weight(1f))
                                 IconButton(
-                                    onClick = { onDuration(state.durationMinutes - 5) },
+                                    onClick = {
+                                        feedback?.tap()
+                                        onDuration(state.durationMinutes - 5)
+                                    },
                                     enabled = state.durationMinutes > 5,
                                     modifier = Modifier.size(40.dp),
                                 ) {
@@ -227,7 +258,10 @@ fun QuickAddWindow(
                                     modifier = Modifier.width(78.dp),
                                 )
                                 IconButton(
-                                    onClick = { onDuration(state.durationMinutes + 5) },
+                                    onClick = {
+                                        feedback?.tap()
+                                        onDuration(state.durationMinutes + 5)
+                                    },
                                     enabled = state.durationMinutes < 180,
                                     modifier = Modifier.size(40.dp),
                                 ) {
@@ -271,7 +305,10 @@ fun QuickAddWindow(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(Space.xs),
                     ) {
-                        TextButton(onClick = onAdvanced) {
+                        TextButton(onClick = {
+                            feedback?.tap()
+                            onAdvanced()
+                        }) {
                             Text(
                                 "更多设置",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -281,6 +318,7 @@ fun QuickAddWindow(
                         Spacer(Modifier.weight(1f))
                         Button(
                             onClick = {
+                                feedback?.tap()
                                 keyboard?.hide()
                                 onCreate()
                             },

@@ -17,7 +17,13 @@ enum class FocusAudioOption(val label: String, val resId: Int?) {
     MUSIC_BOX("八音盒", R.raw.music_box),
 }
 
-/** 本地 raw 音频循环播放，无网络、无第三方播放器依赖。 */
+/**
+ * 本地 raw 音频循环播放，无网络、无第三方播放器依赖。
+ *
+ * 循环素材必须本身可无缝循环：不能带淡入淡出，首尾电平要连续。
+ * 否则 isLooping 会把淡变一起循环，听感就是「一阵一阵」的断音。
+ * 白噪音 / 棕色噪音已按此重制（裁掉淡变 + 首尾等功率交叉淡化）。
+ */
 @Singleton
 class FocusAudioPlayer @Inject constructor(@ApplicationContext private val context: Context) {
     private var player: MediaPlayer? = null

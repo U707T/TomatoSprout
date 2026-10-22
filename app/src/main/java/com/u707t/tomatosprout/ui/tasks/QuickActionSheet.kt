@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import com.u707t.tomatosprout.ui.components.AppBottomSheet
 import com.u707t.tomatosprout.ui.components.Metric
 import com.u707t.tomatosprout.ui.components.SectionCaption
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Space
 
@@ -52,6 +53,7 @@ fun QuickActionSheet(
     onStats: () -> Unit,
 ) {
     val accent = runCatching { Color(state.color.toInt()) }.getOrDefault(MaterialTheme.colorScheme.primary)
+    val feedback = LocalFeedback.current
 
     AppBottomSheet(onDismiss = onDismiss) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -77,7 +79,10 @@ fun QuickActionSheet(
                 )
             }
             Surface(
-                onClick = onToggleDone,
+                onClick = {
+                    feedback?.tap()
+                    onToggleDone()
+                },
                 shape = RoundedCornerShape(Radii.sm),
                 color = MaterialTheme.colorScheme.surfaceVariant,
             ) {
@@ -182,6 +187,7 @@ private fun ActionTile(
     enabled: Boolean = true,
     danger: Boolean = false,
 ) {
+    val feedback = LocalFeedback.current
     val fg = when {
         !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
         danger -> MaterialTheme.colorScheme.error
@@ -190,7 +196,10 @@ private fun ActionTile(
     Surface(
         modifier = modifier
             .height(48.dp)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled) {
+                if (danger) feedback?.reject() else feedback?.tap()
+                onClick()
+            },
         shape = RoundedCornerShape(Radii.sm),
         color = if (danger) {
             MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)

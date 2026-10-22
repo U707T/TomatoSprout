@@ -225,7 +225,7 @@ class FocusTimerViewModel @Inject constructor(
             } else {
                 "已记录中断 ${max(1, result.minutes)} 分钟，不计入打卡"
             }
-            _exit.tryEmit(FocusExit(message))
+            _exit.tryEmit(FocusExit(message, rejected = result.discarded))
         } else {
             summary.value = result
         }

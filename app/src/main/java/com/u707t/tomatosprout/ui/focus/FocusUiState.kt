@@ -49,7 +49,7 @@ data class StopConfirm(
 }
 
 /** 未完成的专注结算完成后，计时页需要带着一句反馈直接退出。 */
-data class FocusExit(val message: String)
+data class FocusExit(val message: String, val rejected: Boolean = false)
 
 data class FocusUiState(
     val loading: Boolean = true,

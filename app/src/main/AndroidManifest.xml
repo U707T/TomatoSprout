@@ -4,6 +4,7 @@
 
     <!-- 权限最小化：仅通知（可选）+ 用户主动触发 WebDAV 同步时使用的网络权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- 仅用于重启后恢复本地提醒闹钟 -->

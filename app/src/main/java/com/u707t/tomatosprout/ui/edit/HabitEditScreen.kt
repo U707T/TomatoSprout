@@ -68,6 +68,7 @@ import com.u707t.tomatosprout.ui.components.BackBar
 import com.u707t.tomatosprout.ui.components.FilterPill
 import com.u707t.tomatosprout.ui.components.SectionHeader
 import com.u707t.tomatosprout.ui.components.SegmentedTabs
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.components.SoftCard
 import com.u707t.tomatosprout.ui.theme.Space
 import com.u707t.tomatosprout.ui.theme.Tomato
@@ -87,6 +88,7 @@ fun HabitEditScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val feedback = LocalFeedback.current
     var subtaskText by remember { mutableStateOf("") }
     var showDelete by remember { mutableStateOf(false) }
     val reminderPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -108,7 +110,10 @@ fun HabitEditScreen(
                 onBack = onBack,
                 actions = {
                     if (!state.isNew) {
-                        IconButton(onClick = { showDelete = true }) {
+                        IconButton(onClick = {
+                            feedback?.tap()
+                            showDelete = true
+                        }) {
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = "删除任务",
@@ -116,7 +121,13 @@ fun HabitEditScreen(
                             )
                         }
                     }
-                    TextButton(onClick = viewModel::save, enabled = !state.loading && !state.saving) {
+                    TextButton(
+                        onClick = {
+                            feedback?.confirm()
+                            viewModel.save()
+                        },
+                        enabled = !state.loading && !state.saving,
+                    ) {
                         Text(if (state.saving) "保存中…" else "保存")
                     }
                 },
@@ -479,12 +490,16 @@ fun HabitEditScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
+                        feedback?.reject()
                         showDelete = false
                         viewModel.delete()
                     },
                 ) { Text("确认删除") }
             },
-            dismissButton = { TextButton(onClick = { showDelete = false }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = {
+                feedback?.tap()
+                showDelete = false
+            }) { Text("取消") } },
         )
     }
 }

@@ -47,6 +47,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.ui.components.BackBar
 import com.u707t.tomatosprout.ui.components.SoftCard
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Space
 import java.time.Instant
@@ -63,6 +64,7 @@ fun WebDavScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val feedback = LocalFeedback.current
     var initialized by remember { mutableStateOf(false) }
     var server by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
@@ -84,7 +86,10 @@ fun WebDavScreen(
     Scaffold(
         topBar = {
             BackBar("WebDAV 同步", onBack, actions = {
-                TextButton(onClick = onOpenLogs) { Text("日志") }
+                TextButton(onClick = {
+                    feedback?.tap()
+                    onOpenLogs()
+                }) { Text("日志") }
             })
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -146,7 +151,13 @@ fun WebDavScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Switch(checked = wifiOnly, onCheckedChange = { wifiOnly = it })
+                    Switch(
+                        checked = wifiOnly,
+                        onCheckedChange = {
+                            feedback?.tap()
+                            wifiOnly = it
+                        },
+                    )
                 }
                 Text(
                     "密码使用 Android Keystore 的 AES-GCM 加密保存，不会写入数据库、日志或同步文件。",
@@ -163,13 +174,19 @@ fun WebDavScreen(
             Spacer(Modifier.height(Space.md))
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.fillMaxWidth()) {
                 Button(
-                    onClick = { viewModel.save(server, username, password, path, wifiOnly) },
+                    onClick = {
+                        feedback?.tap()
+                        viewModel.save(server, username, password, path, wifiOnly)
+                    },
                     modifier = Modifier.weight(1f).height(48.dp),
                     enabled = !busy,
                     shape = RoundedCornerShape(Radii.sm),
                 ) { Text("保存") }
                 OutlinedButton(
-                    onClick = { viewModel.test(server, username, password, path, wifiOnly) },
+                    onClick = {
+                        feedback?.tap()
+                        viewModel.test(server, username, password, path, wifiOnly)
+                    },
                     modifier = Modifier.weight(1f).height(48.dp),
                     enabled = !busy,
                     shape = RoundedCornerShape(Radii.sm),
@@ -177,7 +194,10 @@ fun WebDavScreen(
             }
             Spacer(Modifier.height(Space.sm))
             Button(
-                onClick = { viewModel.sync(server, username, password, path, wifiOnly) },
+                onClick = {
+                    feedback?.tap()
+                    viewModel.sync(server, username, password, path, wifiOnly)
+                },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 enabled = !busy && server.isNotBlank(),
                 shape = RoundedCornerShape(Radii.sm),

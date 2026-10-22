@@ -56,6 +56,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.ui.components.AppBottomSheet
 import com.u707t.tomatosprout.ui.components.BackBar
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Space
 import com.u707t.tomatosprout.ui.theme.Tomato
@@ -71,6 +72,7 @@ fun HistoryScreen(
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val feedback = LocalFeedback.current
     var noteRecord by remember { mutableStateOf<HistoryRecordUi?>(null) }
     var noteText by remember { mutableStateOf("") }
     var showMakeup by remember { mutableStateOf(false) }
@@ -81,7 +83,10 @@ fun HistoryScreen(
     Scaffold(
         topBar = {
             BackBar("历史", onBack, actions = {
-                TextButton(onClick = viewModel::goToday) { Text("今天") }
+                TextButton(onClick = {
+                    feedback?.tap()
+                    viewModel.goToday()
+                }) { Text("今天") }
             })
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -122,7 +127,10 @@ fun HistoryScreen(
                         )
                     }
                     if (ui.canMakeup) {
-                        TextButton(onClick = { showMakeup = true }) { Text("补卡") }
+                        TextButton(onClick = {
+                            feedback?.tap()
+                            showMakeup = true
+                        }) { Text("补卡") }
                     }
                 }
             }
@@ -169,7 +177,10 @@ fun HistoryScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            TextButton(onClick = { showMakeup = true }) { Text("去补卡") }
+                            TextButton(onClick = {
+                                feedback?.tap()
+                                showMakeup = true
+                            }) { Text("去补卡") }
                         }
                     }
                 }
@@ -223,6 +234,7 @@ fun HistoryScreen(
                             key(habit.taskId) {
                                 TextButton(
                                     onClick = {
+                                        feedback?.confirm()
                                         viewModel.makeup(habit.taskId)
                                         showMakeup = false
                                     },
@@ -239,7 +251,10 @@ fun HistoryScreen(
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { showMakeup = false }) { Text("关闭") } },
+            confirmButton = { TextButton(onClick = {
+                feedback?.tap()
+                showMakeup = false
+            }) { Text("关闭") } },
         )
     }
 }
@@ -254,6 +269,7 @@ private fun MonthCalendar(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
 ) {
+    val feedback = LocalFeedback.current
     Surface(
         shape = RoundedCornerShape(Radii.md),
         color = MaterialTheme.colorScheme.surface,
@@ -261,14 +277,20 @@ private fun MonthCalendar(
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onPrevious) { Text("‹") }
+                TextButton(onClick = {
+                    feedback?.tap()
+                    onPrevious()
+                }) { Text("‹") }
                 Text(
                     "${month.year} 年 ${month.monthValue} 月",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center,
                 )
-                TextButton(onClick = onNext) { Text("›") }
+                TextButton(onClick = {
+                    feedback?.tap()
+                    onNext()
+                }) { Text("›") }
             }
             Row(Modifier.fillMaxWidth()) {
                 listOf("一", "二", "三", "四", "五", "六", "日").forEach { label ->
@@ -294,7 +316,10 @@ private fun MonthCalendar(
                             Box(
                                 Modifier.weight(1f).aspectRatio(0.86f)
                                     .clickable(enabled = index in 0 until total) {
-                                        if (index in 0 until total) onSelect(month.atDay(index + 1))
+                                        if (index in 0 until total) {
+                                            feedback?.tap()
+                                            onSelect(month.atDay(index + 1))
+                                        }
                                     },
                                 contentAlignment = Alignment.Center,
                             ) {

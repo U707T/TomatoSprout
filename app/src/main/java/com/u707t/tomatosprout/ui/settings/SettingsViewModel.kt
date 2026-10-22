@@ -10,6 +10,7 @@ import com.u707t.tomatosprout.domain.AppSettings
 import com.u707t.tomatosprout.domain.SettingsRepository
 import com.u707t.tomatosprout.domain.ThemeMode
 import com.u707t.tomatosprout.notify.ReminderScheduler
+import com.u707t.tomatosprout.ui.feedback.FeedbackController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -28,11 +29,18 @@ class SettingsViewModel @Inject constructor(
     private val backup: BackupManager,
     private val reset: DataResetManager,
     private val scheduler: ReminderScheduler,
+    private val feedback: FeedbackController,
 ) : ViewModel() {
     val settings: StateFlow<AppSettings> =
         settingsRepo.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
 
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
+    val hapticsEnabled = feedback.hapticsEnabled
+    val soundEnabled = feedback.soundEnabled
+
+    fun setHaptics(enabled: Boolean) = feedback.setHapticsEnabled(enabled)
+    fun setSound(enabled: Boolean) = feedback.setSoundEnabled(enabled)
 
     fun setTheme(mode: ThemeMode) = update { it.copy(themeMode = mode) }
     fun setSimple(enabled: Boolean) = update { it.copy(simpleMode = enabled) }

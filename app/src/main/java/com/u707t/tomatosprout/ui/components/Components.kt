@@ -1,6 +1,9 @@
 package com.u707t.tomatosprout.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -43,6 +46,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -53,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.u707t.tomatosprout.domain.DayAggregate
 import com.u707t.tomatosprout.domain.HabitSnapshot
+import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Space
 import java.time.LocalDate
@@ -230,6 +235,16 @@ fun StatTile(label: String, value: String, modifier: Modifier = Modifier, unit: 
 
 @Composable
 fun CheckCircle(checked: Boolean, onClick: () -> Unit, description: String) {
+    val scale by animateFloatAsState(
+        targetValue = if (checked) 1f else 0.88f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = 600f),
+        label = "checkScale",
+    )
+    val background by animateColorAsState(
+        targetValue = if (checked) MaterialTheme.colorScheme.primary else Color.Transparent,
+        animationSpec = tween(180),
+        label = "checkBg",
+    )
     Box(
         Modifier
             .size(48.dp)
@@ -239,9 +254,12 @@ fun CheckCircle(checked: Boolean, onClick: () -> Unit, description: String) {
     ) {
         Surface(
             shape = CircleShape,
-            color = if (checked) MaterialTheme.colorScheme.primary else Color.Transparent,
+            color = background,
             border = if (checked) null else BorderStroke(1.5.dp, MaterialTheme.colorScheme.outline),
-            modifier = Modifier.size(30.dp),
+            modifier = Modifier.size(30.dp).graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
         ) {
             if (checked) {
                 Icon(
@@ -455,6 +473,7 @@ fun ConfirmDialog(
     onDismiss: () -> Unit,
     destructive: Boolean = false,
 ) {
+    val feedback = LocalFeedback.current
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(Radii.lg),
@@ -468,7 +487,10 @@ fun ConfirmDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
+            TextButton(onClick = {
+                if (destructive) feedback?.reject() else feedback?.confirm()
+                onConfirm()
+            }) {
                 Text(
                     confirmLabel,
                     color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
@@ -477,7 +499,10 @@ fun ConfirmDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            TextButton(onClick = {
+                feedback?.tap()
+                onDismiss()
+            }) { Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         },
     )
 }
