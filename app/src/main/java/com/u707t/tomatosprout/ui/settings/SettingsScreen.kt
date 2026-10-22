@@ -132,8 +132,8 @@ fun SettingsScreen(
                     NumberRow("长休息", settings.longBreakMinutes, 10, 60, viewModel::setLongBreakMinutes)
                     GroupDivider()
                     SwitchRow(
-                        "忽略 30 秒内的正向计时",
-                        "开启时不足 30 秒直接丢弃；关闭时先询问是否记录",
+                        "忽略 30 秒内的专注",
+                        "正计时或倒计时不足 30 秒时直接丢弃，不留中断记录",
                         settings.ignoreShortFocus,
                         viewModel::setIgnoreShortFocus,
                     )

@@ -137,6 +137,42 @@ class FocusSessionUseCaseTest {
     }
 
     @Test
+    fun `manual stop under 30 seconds is discarded when ignore is on`() = runBlocking {
+        val f = Fixture()
+        val result = f.useCase.settle(
+            input(
+                f.task,
+                at(day, 9, 0),
+                at(day, 9, 1),
+                actualSeconds = 20,
+                reason = FocusEndReason.MANUAL_STOP,
+            ),
+        )
+        assertTrue(result.discarded)
+        assertTrue(f.focus.items.isEmpty())
+        assertTrue(f.checkIns.items.isEmpty())
+    }
+
+    @Test
+    fun `manual stop under 30 seconds is recorded when ignore is off`() = runBlocking {
+        val f = Fixture()
+        val result = f.useCase.settle(
+            input(
+                f.task,
+                at(day, 9, 0),
+                at(day, 9, 1),
+                actualSeconds = 20,
+                reason = FocusEndReason.MANUAL_STOP,
+                ignoreShort = false,
+            ),
+        )
+        assertFalse(result.discarded)
+        assertTrue(result.interrupted)
+        assertEquals(1, f.focus.items.size)
+        assertTrue(f.checkIns.items.isEmpty())
+    }
+
+    @Test
     fun `manual stop records interrupted session without check-in`() = runBlocking {
         val f = Fixture()
         val result = f.useCase.settle(

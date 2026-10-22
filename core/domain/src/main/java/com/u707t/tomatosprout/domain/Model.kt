@@ -166,6 +166,7 @@ data class AppSettings(
     val defaultBreakMinutes: Int = 5,
     /** 每 4 个番茄后的长休息时长。 */
     val longBreakMinutes: Int = 15,
+    /** 正计时 / 倒计时不足 30 秒时直接丢弃，不写中断记录。 */
     val ignoreShortFocus: Boolean = true,
     val strictMode: Boolean = false,
     val countUpMode: Boolean = false,

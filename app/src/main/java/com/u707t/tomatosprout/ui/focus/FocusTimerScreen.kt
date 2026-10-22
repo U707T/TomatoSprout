@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
+import android.widget.Toast
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -81,10 +82,12 @@ import com.u707t.tomatosprout.R
 import com.u707t.tomatosprout.domain.SessionAttribution
 import com.u707t.tomatosprout.domain.SystemAppClock
 import com.u707t.tomatosprout.domain.Task
+import com.u707t.tomatosprout.domain.TaskStatus
 import com.u707t.tomatosprout.domain.TaskType
 import com.u707t.tomatosprout.domain.TimerEngine
 import com.u707t.tomatosprout.domain.TimerMode
 import com.u707t.tomatosprout.domain.TimerPhase
+import com.u707t.tomatosprout.ui.components.ConfirmDialog
 import com.u707t.tomatosprout.ui.components.rememberHaptics
 import kotlin.math.max
 
@@ -124,6 +127,15 @@ fun FocusTimerScreen(
     val window = activity?.window
     val snackbar = remember { SnackbarHostState() }
     val haptics = rememberHaptics()
+
+    // 未完成（中断 / 丢弃 / 不足 30 秒）结算后不再停在计时页：
+    // Toast 说明这次没有计入打卡，然后直接回任务页。
+    LaunchedEffect(Unit) {
+        viewModel.exit.collect { exit ->
+            Toast.makeText(context, exit.message, Toast.LENGTH_SHORT).show()
+            onExit()
+        }
+    }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
@@ -221,6 +233,11 @@ fun FocusTimerScreen(
         timer.mode == TimerMode.COUNTDOWN -> timer.remainingMillis(now) / 1000
         else -> timer.elapsedMillis(now) / 1000
     }
+    val elapsedSeconds = when {
+        timer == null -> 0L
+        timer.mode == TimerMode.COUNTDOWN -> (totalSeconds - displaySeconds).coerceAtLeast(0)
+        else -> displaySeconds
+    }
     val progress = when {
         timer == null -> 0f
         timer.mode == TimerMode.COUNTDOWN -> 1f - (displaySeconds.toFloat() / max(1, totalSeconds))
@@ -242,6 +259,7 @@ fun FocusTimerScreen(
     val quote = quotes[(task?.id?.hashCode() ?: 0).mod(quotes.size)]
     var audioPanel by remember { mutableStateOf(false) }
     var brightnessPanel by remember { mutableStateOf(false) }
+    var resetConfirm by remember { mutableStateOf(false) }
     var taskMenu by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
 
@@ -310,7 +328,7 @@ fun FocusTimerScreen(
                     taskMenu = false
                     viewModel.selectTask(id)
                 },
-                taskList = ui.tasks.filter { it.timerMode != "none" },
+                taskList = ui.tasks.filter { it.timerMode != "none" && it.status != TaskStatus.DONE },
                 onStart = start,
                 onMinus = { viewModel.setFocusMinutes(ui.focusMinutes - 5) },
                 onPlus = { viewModel.setFocusMinutes(ui.focusMinutes + 5) },
@@ -384,7 +402,7 @@ fun FocusTimerScreen(
                 },
                 onReset = {
                     haptics.tap()
-                    viewModel.resetTimer()
+                    if (elapsedSeconds > 0) resetConfirm = true else viewModel.resetTimer()
                 },
                 onStop = {
                     haptics.tap()
@@ -431,6 +449,20 @@ fun FocusTimerScreen(
                 viewModel.dismissSummary()
                 start()
             },
+        )
+    }
+
+    if (resetConfirm) {
+        ConfirmDialog(
+            title = "放弃当前计时？",
+            message = "重置会丢弃当前计时，不写入任何记录；需要保留请改用「停止」。",
+            confirmLabel = "放弃并重置",
+            destructive = true,
+            onConfirm = {
+                resetConfirm = false
+                viewModel.resetTimer()
+            },
+            onDismiss = { resetConfirm = false },
         )
     }
 }

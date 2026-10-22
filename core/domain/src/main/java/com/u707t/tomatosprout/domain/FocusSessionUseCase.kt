@@ -57,8 +57,8 @@ data class FocusSettlementResult(
  *
  * 1. 倒计时自然结束 → 写 FocusSession + 自动写 CheckIn + 更新连续天数 + 任务实际番茄数（仅番茄钟）；
  * 2. 正向计时结束（≥30s）→ 由 UI 弹窗确认后调用，写 FocusSession + CheckIn + 实际番茄数；
- * 3. 正向计时 <30s → ignoreShortFocus 时直接丢弃，不写任何记录；
- * 4. 手动放弃/中途停止 → 只写一条 outcome=interrupted 的 FocusSession，
+ * 3. 正计时/倒计时不足 30s → ignoreShortFocus 时直接丢弃，不写任何记录；
+ * 4. 手动放弃/中途停止（≥30s）→ 只写一条 outcome=interrupted 的 FocusSession，
  *    开启严格模式则彻底丢弃；两种情况都不触发打卡；
  * 5. 跨午夜 → 默认归属结束日；midnightMode 开启时归属开始日。
  */
@@ -91,7 +91,10 @@ class FocusSessionUseCase @Inject constructor(
         if (input.reason == FocusEndReason.MANUAL_STOP && input.strict) {
             return discarded("严格模式下提前结束，本次专注已作废")
         }
-        if (input.reason == FocusEndReason.COUNTUP_FINISHED &&
+        // 30 秒忽略规则同时覆盖正计时与倒计时手动停止：
+        // 刚点开始就退出不应该留下一条 3 秒的「中断记录」。
+        if ((input.reason == FocusEndReason.MANUAL_STOP ||
+                input.reason == FocusEndReason.COUNTUP_FINISHED) &&
             input.actualSeconds < 30 &&
             input.ignoreShortFocus
         ) {
