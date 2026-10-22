@@ -16,6 +16,7 @@ import com.u707t.tomatosprout.sync.SnapshotFactory
 import com.u707t.tomatosprout.sync.SyncSnapshot
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
+import java.time.LocalTime
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -72,25 +73,34 @@ class BackupManager @Inject constructor(
         var conflicts = 0
         var skipped = 0
         val localTasks = tasks.captureAll().tasks.associateBy { it.id }
-        val newTaskIds = mutableSetOf<String>()
+        // 新任务 + 与本地完全一致的任务：它们的规则/子任务可以安全补入；冲突任务保留本地
+        val acceptedTaskIds = mutableSetOf<String>()
 
         snapshot.tasks.forEach { remote ->
             val local = localTasks[remote.id]
             when {
                 local == null -> {
                     tasks.restoreAll(TaskBundle(tasks = listOf(remote.toDomain())), overwrite = false)
-                    newTaskIds += remote.id
+                    acceptedTaskIds += remote.id
                     imported++
                 }
-                local.toEntity() == remote -> skipped++
+                local.toEntity() == remote -> {
+                    acceptedTaskIds += remote.id
+                    skipped++
+                }
                 else -> conflicts++ // 保留本地，冲突只提示不覆盖
             }
         }
-        snapshot.subTasks.filter { it.parentTaskId in newTaskIds }.forEach {
+        snapshot.subTasks.filter { it.parentTaskId in acceptedTaskIds }.forEach {
             tasks.restoreAll(TaskBundle(subTasks = listOf(it.toDomain())), overwrite = false)
         }
-        snapshot.habitRules.filter { it.taskId in newTaskIds }.forEach { tasks.upsertHabitRule(it.toDomain()) }
-        snapshot.goalRules.filter { it.taskId in newTaskIds }.forEach { tasks.upsertGoalRule(it.toDomain()) }
+        snapshot.habitRules.filter { it.taskId in acceptedTaskIds }.forEach {
+            // 只补缺失规则，不覆盖本地已经存在的规则
+            if (tasks.habitRule(it.taskId) == null) tasks.upsertHabitRule(it.toDomain())
+        }
+        snapshot.goalRules.filter { it.taskId in acceptedTaskIds }.forEach {
+            if (tasks.goalRule(it.taskId) == null) tasks.upsertGoalRule(it.toDomain())
+        }
         val checkReport = checkIns.restoreAll(snapshot.checkIns.map { it.toDomain() })
         val focusReport = focus.restoreAll(snapshot.focusSessions.map { it.toDomain() })
         // 导入的历史专注会改变番茄账本，按记录重算一次
@@ -129,9 +139,22 @@ class BackupManager @Inject constructor(
         if (snapshot.tasks.map { it.id }.distinct().size != snapshot.tasks.size) return "任务 id 重复"
         runCatching { snapshot.habitRules.forEach { LocalDate.parse(it.startDate) } }
             .onFailure { return "习惯规则的日期格式错误" }
+        runCatching {
+            snapshot.goalRules.forEach {
+                LocalDate.parse(it.startDate)
+                LocalDate.parse(it.endDate)
+            }
+        }.onFailure { return "目标规则的日期格式错误" }
+        runCatching { snapshot.reminders.forEach { LocalTime.parse(it.timeOfDay) } }
+            .onFailure { return "提醒时间格式错误" }
         runCatching { snapshot.checkIns.forEach { LocalDate.parse(it.checkDate) } }
             .onFailure { return "打卡记录的日期格式错误" }
         if (snapshot.checkIns.any { it.id.isBlank() || it.taskId.isBlank() }) return "打卡记录缺少 id"
+        if (snapshot.checkIns.any { it.count < 0 }) return "打卡次数不合法"
+        if (snapshot.habitRules.any { it.targetCountPerPeriod < 0 }) return "习惯目标次数不合法"
+        if (snapshot.goalRules.any { (it.targetTotalCount ?: 0) < 0 || (it.targetTotalSeconds ?: 0) < 0 }) {
+            return "目标数值不合法"
+        }
         if (snapshot.focusSessions.any { it.actualSeconds < 0 || it.plannedSeconds < 0 }) return "专注时长不合法"
         if (snapshot.subTasks.any { it.id.isBlank() || it.parentTaskId.isBlank() || it.title.isBlank() }) {
             return "子任务缺少 id、父任务或标题"

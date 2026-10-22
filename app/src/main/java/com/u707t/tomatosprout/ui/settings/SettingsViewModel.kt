@@ -79,7 +79,11 @@ class SettingsViewModel @Inject constructor(
                         ?: error("无法读取文件")
                 }
             }.getOrElse { messages.emit("读取失败：${it.message}"); return@launch }
-            val result = backup.importJson(text)
+            // 导入逻辑里会做字段校验；这里再兜一层，避免非法日期等在 toDomain 阶段抛异常后没有提示
+            val result = runCatching { backup.importJson(text) }.getOrElse {
+                messages.emit("导入失败：${it.message ?: "文件内容不合法"}")
+                return@launch
+            }
             if (result.ok) runCatching { scheduler.rescheduleAll() }
             messages.emit(
                 when {
@@ -92,8 +96,9 @@ class SettingsViewModel @Inject constructor(
 
     fun clearAll() {
         viewModelScope.launch {
-            reset.resetAll()
-            messages.emit("已清除本地记录（记录以软删除方式保留，不再显示）")
+            runCatching { reset.resetAll() }
+                .onSuccess { messages.emit("已清除本地记录（记录以软删除方式保留，不再显示）") }
+                .onFailure { messages.emit("清除失败：${it.message ?: "请稍后重试"}") }
         }
     }
 

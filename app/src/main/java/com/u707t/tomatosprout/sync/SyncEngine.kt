@@ -32,6 +32,8 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -100,6 +102,7 @@ class SyncEngine @Inject constructor(
     private val clock: AppClock,
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = false }
+    private val syncMutex = Mutex()
 
     private suspend fun config(): WebDavConfig? {
         val s = settings.current()
@@ -113,7 +116,9 @@ class SyncEngine @Inject constructor(
         return client.testConnection(config)
     }
 
-    suspend fun sync(): SyncResult {
+    suspend fun sync(): SyncResult = syncMutex.withLock { syncLocked() }
+
+    private suspend fun syncLocked(): SyncResult {
         val local = settings.current()
         val config = config() ?: return SyncResult(false, "尚未配置 WebDAV")
         if (local.wifiOnly && !onWifi()) {
@@ -230,11 +235,8 @@ class SyncEngine @Inject constructor(
                 return@forEach
             }
             if (localTask.toEntity() == r) return@forEach
-            // 设备时钟可能有几分钟偏差。用容差把“刚同步完又被改”的记录判成变化，
-            // 宁可多生成冲突副本，也不要因为时钟慢几秒就静默丢掉一端的数据。
-            val changedSince = if (lastSync == 0L) 0L else (lastSync - SYNC_CLOCK_SKEW_MS).coerceAtLeast(0L)
-            val remoteChanged = lastSync == 0L || r.updatedAt > changedSince
-            val localChanged = lastSync == 0L || localTask.updatedAt > changedSince
+            val remoteChanged = MergePolicy.changed(r.updatedAt, lastSync)
+            val localChanged = MergePolicy.changed(localTask.updatedAt, lastSync)
             when {
                 remoteChanged && !localChanged -> {
                     // 本地自上次同步后没动过 → 接受远端
@@ -281,9 +283,11 @@ class SyncEngine @Inject constructor(
             }
         }
 
-        // 规则跟随任务。本地有未同步修改的任务时不覆盖其规则，避免一次同步把本地编辑吞掉。
+        // 规则跟随任务。保护名单必须在插入远端新任务之前算：
+        // 远端新建任务同样有 updatedAt > lastSync，但它不是「本地改过」，
+        // 否则它的习惯 / 目标规则会被跳过，变成没有排期的裸任务。
+        val protectedIds = MergePolicy.protectedTaskIds(localTasks.values, lastSync)
         val localAfter = tasks.captureAll().tasks.associateBy { it.id }
-        val protectedIds = localAfter.values.filter { lastSync > 0 && it.updatedAt > lastSync }.map { it.id }.toSet()
         val validTaskIds = localAfter.keys
         tasks.restoreAll(
             TaskBundle(subTasks = remote.subTasks.filter { it.parentTaskId in validTaskIds }.map { it.toDomain() }),
@@ -345,11 +349,6 @@ class SyncEngine @Inject constructor(
         error = true,
         message = message.take(300),
     )
-
-    private companion object {
-        /** 允许的设备时钟偏差；超出这个窗口的修改仍然按 updatedAt 正常比较。 */
-        const val SYNC_CLOCK_SKEW_MS = 5 * 60_000L
-    }
 }
 
 @HiltWorker

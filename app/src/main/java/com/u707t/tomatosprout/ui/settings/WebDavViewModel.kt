@@ -8,6 +8,7 @@ import com.u707t.tomatosprout.domain.AppSettings
 import com.u707t.tomatosprout.domain.SettingsRepository
 import com.u707t.tomatosprout.notify.ReminderScheduler
 import com.u707t.tomatosprout.sync.SyncEngine
+import com.u707t.tomatosprout.sync.SyncResult
 import com.u707t.tomatosprout.sync.SyncRetryWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -53,32 +54,46 @@ class WebDavViewModel @Inject constructor(
     fun save(server: String, username: String, password: String, path: String, wifiOnly: Boolean) {
         viewModelScope.launch {
             _busy.value = true
-            saveFields(server, username, password, path, wifiOnly)
-            _busy.value = false
-            messages.emit("WebDAV 配置已保存")
+            try {
+                runCatching { saveFields(server, username, password, path, wifiOnly) }
+                    .onSuccess { messages.emit("WebDAV 配置已保存") }
+                    .onFailure { messages.emit("保存失败：${it.message ?: "请稍后重试"}") }
+            } finally {
+                _busy.value = false
+            }
         }
     }
 
     fun test(server: String, username: String, password: String, path: String, wifiOnly: Boolean) {
         viewModelScope.launch {
             _busy.value = true
-            saveFields(server, username, password, path, wifiOnly)
-            val result = engine.testConnection()
-            _busy.value = false
-            messages.emit(result.fold({ "连接成功，服务器可以访问" }, { "连接失败：${it.message}" }))
+            try {
+                val saved = runCatching {
+                    saveFields(server, username, password, path, wifiOnly)
+                    engine.testConnection()
+                }.getOrElse { Result.failure(it) }
+                messages.emit(saved.fold({ "连接成功，服务器可以访问" }, { "连接失败：${it.message}" }))
+            } finally {
+                _busy.value = false
+            }
         }
     }
 
     fun sync(server: String, username: String, password: String, path: String, wifiOnly: Boolean) {
         viewModelScope.launch {
             _busy.value = true
-            saveFields(server, username, password, path, wifiOnly)
-            val result = engine.sync()
-            if (result.success) runCatching { scheduler.rescheduleAll() }
-            _busy.value = false
-            messages.emit(result.message)
-            if (!result.success && result.retryable) {
-                SyncRetryWorker.enqueue(context, wifiOnly)
+            try {
+                val result = runCatching {
+                    saveFields(server, username, password, path, wifiOnly)
+                    engine.sync()
+                }.getOrElse { SyncResult(false, it.message ?: "同步失败") }
+                if (result.success) runCatching { scheduler.rescheduleAll() }
+                messages.emit(result.message)
+                if (!result.success && result.retryable) {
+                    SyncRetryWorker.enqueue(context, wifiOnly)
+                }
+            } finally {
+                _busy.value = false
             }
         }
     }
