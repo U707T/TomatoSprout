@@ -145,6 +145,10 @@ class FocusIslandPayloadTest {
     fun `break and long titles stay readable`() {
         val breakJson = FocusIslandPayload.build(countdown().copy(isBreak = true))
         assertTrue(breakJson.str("ticker").startsWith("休息中"))
+        assertEquals(
+            "休息中",
+            FocusIslandPayload.headline(countdown().copy(isBreak = true, title = "休息一下")),
+        )
 
         val long = FocusIslandPayload.build(
             countdown().copy(title = "一个特别特别长的任务名称需要被截断掉"),

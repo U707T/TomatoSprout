@@ -105,9 +105,12 @@ internal object FocusIslandPayload {
 
     /** `专注中 · 写代码`，长度按系统 ticker 的显示宽度裁一下。 */
     fun headline(input: FocusIslandInput): String {
+        val status = statusLabel(input)
         val name = input.title.trim().ifBlank { if (input.isBreak) "休息" else "自由专注" }
+        // 休息时标题本来就是「休息一下」，别再拼一次
+        if (input.isBreak && (name == "休息" || name == "休息一下")) return status
         val short = if (name.length > 16) name.take(15) + "…" else name
-        return "${statusLabel(input)} · $short"
+        return "$status · $short"
     }
 
     /** `mm:ss` / `h:mm:ss`，与 App 内计时页保持一致。 */
