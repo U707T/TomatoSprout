@@ -1,5 +1,7 @@
 package com.u707t.tomatosprout.ui.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -7,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,12 +23,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.u707t.tomatosprout.BuildConfig
+import com.u707t.tomatosprout.ui.components.BackBar
 import com.u707t.tomatosprout.ui.components.SoftCard
+import com.u707t.tomatosprout.ui.theme.Radii
+import com.u707t.tomatosprout.ui.theme.Space
 import com.u707t.tomatosprout.ui.theme.Tomato
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,23 +40,27 @@ import com.u707t.tomatosprout.ui.theme.Tomato
 fun AboutScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("关于番茄芽") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "返回") }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
+            BackBar("关于番茄芽", onBack)
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
         ) {
-            Row(Modifier.fillMaxWidth()) {
-                Text("🍅", fontSize = 48.sp)
-                Column(Modifier.padding(start = 12.dp)) {
-                    Text("番茄芽", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = Space.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier
+                        .size(60.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, androidx.compose.foundation.shape.RoundedCornerShape(Radii.md)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("🍅", fontSize = 30.sp)
+                }
+                Column(Modifier.padding(start = Space.lg)) {
+                    Text("番茄芽", style = MaterialTheme.typography.headlineSmall)
                     Text(
                         "版本 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                         style = MaterialTheme.typography.labelMedium,
@@ -57,7 +68,7 @@ fun AboutScreen(onBack: () -> Unit) {
                     )
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(Space.md))
             SoftCard {
                 Text("隐私说明", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(6.dp))

@@ -20,7 +20,6 @@ data class QuickAddUiState(
     val type: QuickTaskType = QuickTaskType.POMODORO,
     val timer: QuickTimerMode = QuickTimerMode.COUNTDOWN,
     val durationMinutes: Int = 25,
-    val customDuration: Boolean = false,
     val saving: Boolean = false,
     val error: String? = null,
 )

@@ -18,3 +18,6 @@ key.properties
 # 图标设计历史版本（体积大，不入库）
 design/icon/_archive/
 __pycache__/
+
+# 第三方资源包（体积大，且需确认授权后再入库）
+/res.zip

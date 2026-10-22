@@ -40,7 +40,6 @@ class QuickAddViewModel @Inject constructor(
     fun setDuration(value: Int) = _state.update {
         it.copy(durationMinutes = value.coerceIn(5, 180))
     }
-    fun setCustomDuration(enabled: Boolean) = _state.update { it.copy(customDuration = enabled) }
     fun clearError() = _state.update { it.copy(error = null) }
 
     fun create() {

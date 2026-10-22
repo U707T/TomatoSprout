@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,19 +39,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.u707t.tomatosprout.domain.StatsData
 import com.u707t.tomatosprout.ui.components.SoftCard
+import com.u707t.tomatosprout.ui.components.SegmentedTabs
 import com.u707t.tomatosprout.ui.components.StatTile
-import com.u707t.tomatosprout.ui.theme.Tomato
+import com.u707t.tomatosprout.ui.theme.Space
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 val chartPalette = listOf(
-    Tomato,
-    Color(0xFFF3B58A),
-    Color(0xFF8FAE83),
-    Color(0xFF8C9ED6),
-    Color(0xFFC59ACF),
-    Color(0xFF7FB5B5),
-    Color(0xFFB0A8A0),
+    com.u707t.tomatosprout.ui.theme.Palette.Tomato,
+    com.u707t.tomatosprout.ui.theme.Palette.Apricot,
+    com.u707t.tomatosprout.ui.theme.Palette.Sage,
+    com.u707t.tomatosprout.ui.theme.Palette.Sky,
+    Color(0xFFA184A8),
+    Color(0xFF5F9E93),
+    Color(0xFFB3A69C),
 )
 
 fun formatChartDuration(seconds: Long): String {
@@ -113,17 +113,12 @@ fun DistributionCard(
     SoftCard {
         Text("时长分布", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf(DistributionRange.DAY, DistributionRange.WEEK, DistributionRange.MONTH).forEach { range ->
-                key(range) {
-                    FilterChip(
-                        selected = dashboard.range == range,
-                        onClick = { onRange(range) },
-                        label = { Text(range.label) },
-                    )
-                }
-            }
-        }
+        val ranges = listOf(DistributionRange.DAY, DistributionRange.WEEK, DistributionRange.MONTH)
+        SegmentedTabs(
+            options = ranges.map { it.label },
+            selectedIndex = ranges.indexOf(dashboard.range),
+            onSelect = { onRange(ranges[it]) },
+        )
         if (dashboard.range == DistributionRange.CUSTOM) {
             Text(
                 "${dashboard.customStart} – ${dashboard.customEnd}",
@@ -248,20 +243,17 @@ fun DonutChart(slices: List<ChartSlice>, totalSeconds: Long) {
 @Composable
 fun MonthlyBarChart(dashboard: StatsDashboard, onBarClick: (Int) -> Unit) {
     val density = LocalDensity.current
-    val barColor = Tomato
+    val barColor = MaterialTheme.colorScheme.primary
     val selectedColor = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.outlineVariant
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "${dashboard.month.year} 年 ${dashboard.month.monthValue} 月 · 每日专注",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-            )
-            Text("点击柱子查看当天", style = MaterialTheme.typography.labelSmall, color = textColor)
-        }
-        Spacer(Modifier.height(6.dp))
+        Text(
+            "点击柱子查看当天",
+            style = MaterialTheme.typography.labelSmall,
+            color = textColor,
+            modifier = Modifier.padding(bottom = Space.xs),
+        )
         if (dashboard.bars.isEmpty()) {
             Box(
                 Modifier.fillMaxWidth().height(190.dp),
@@ -395,9 +387,9 @@ fun HourlyFocusChart(hours: List<HourBucket>, bestHour: Int?) {
                                 )
                                 .background(
                                     if (bucket.hour == bestHour) {
-                                        Tomato
+                                        MaterialTheme.colorScheme.primary
                                     } else {
-                                        Tomato.copy(alpha = 0.34f)
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
                                     },
                                     androidx.compose.foundation.shape.RoundedCornerShape(
                                         topStart = 3.dp,
@@ -466,7 +458,7 @@ fun InterruptReasonsCard(reasons: List<InterruptReasonCount>) {
                         Modifier
                             .fillMaxWidth(row.count.toFloat() / max)
                             .fillMaxHeight()
-                            .background(Tomato.copy(alpha = 0.72f), RoundedCornerShape(4.dp)),
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.72f), RoundedCornerShape(4.dp)),
                     )
                 }
                 Text(

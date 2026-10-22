@@ -9,24 +9,31 @@ import android.os.Build
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -34,31 +41,32 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -69,13 +77,15 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.u707t.tomatosprout.R
 import com.u707t.tomatosprout.domain.SessionAttribution
 import com.u707t.tomatosprout.domain.SystemAppClock
+import com.u707t.tomatosprout.domain.Task
 import com.u707t.tomatosprout.domain.TaskType
 import com.u707t.tomatosprout.domain.TimerEngine
 import com.u707t.tomatosprout.domain.TimerMode
 import com.u707t.tomatosprout.domain.TimerPhase
-import com.u707t.tomatosprout.ui.theme.Tomato
+import com.u707t.tomatosprout.ui.components.rememberHaptics
 import kotlin.math.max
 
 private val quotes = listOf(
@@ -84,6 +94,22 @@ private val quotes = listOf(
     "慢一点没关系，只要今天还在向前。",
     "真正的自律，是把想做的事变得更容易开始。",
     "休息也是节奏的一部分。",
+)
+
+private val FocusTimeStyle = TextStyle(
+    fontWeight = FontWeight.Light,
+    fontSize = 72.sp,
+    lineHeight = 80.sp,
+    letterSpacing = (-1.5).sp,
+    fontFeatureSettings = "tnum",
+)
+
+private val FocusTimeCompactStyle = TextStyle(
+    fontWeight = FontWeight.Light,
+    fontSize = 56.sp,
+    lineHeight = 64.sp,
+    letterSpacing = (-1).sp,
+    fontFeatureSettings = "tnum",
 )
 
 @Composable
@@ -97,6 +123,7 @@ fun FocusTimerScreen(
     val activity = context.findActivity()
     val window = activity?.window
     val snackbar = remember { SnackbarHostState() }
+    val haptics = rememberHaptics()
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
@@ -147,6 +174,15 @@ fun FocusTimerScreen(
             }
         }
     }
+    // 专注页背景始终是照片，状态栏/导航栏用白色图标
+    LaunchedEffect(Unit) {
+        if (window != null) {
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = false
+                isAppearanceLightNavigationBars = false
+            }
+        }
+    }
     LaunchedEffect(ui.error) {
         ui.error?.let {
             snackbar.showSnackbar(it)
@@ -154,30 +190,31 @@ fun FocusTimerScreen(
         }
     }
 
-    // 进入全屏时淡入，避免导航切换时闪黑
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(260),
+        animationSpec = tween(320),
         label = "focusFade",
     )
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val start = {
+        haptics.confirm()
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        viewModel.startFocus()
+        // 选中任务时尊重任务自己的计时方式；自由专注才回落到全局设置
+        viewModel.startFocus(ui.selectedTask?.timerMode)
     }
 
     val timer = ui.timer
     val now = ui.nowMono
     val task = ui.selectedTask
-    val base = task?.let { runCatching { Color(it.color.toInt()) }.getOrNull() } ?: Tomato
+    val base = task?.let { runCatching { Color(it.color.toInt()) }.getOrNull() } ?: Color(0xFFE0553F)
     val totalSeconds = timer?.plannedSeconds ?: (ui.focusMinutes * 60)
     val displaySeconds = when {
         timer == null -> (ui.focusMinutes * 60).toLong()
@@ -189,34 +226,46 @@ fun FocusTimerScreen(
         timer.mode == TimerMode.COUNTDOWN -> 1f - (displaySeconds.toFloat() / max(1, totalSeconds))
         else -> (displaySeconds.toFloat() / max(1, totalSeconds)).coerceIn(0f, 1f)
     }
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(480),
+        label = "focusProgress",
+    )
+    val crossDay = timer?.let {
+        SessionAttribution.isShifted(it.startedAtEpoch, System.currentTimeMillis(), SystemAppClock.zone())
+    } == true
+    val effectiveCountUp = when (task?.timerMode) {
+        "countup" -> true
+        "countdown" -> false
+        else -> ui.settings.countUpMode
+    }
     val quote = quotes[(task?.id?.hashCode() ?: 0).mod(quotes.size)]
-    var audioMenu by remember { mutableStateOf(false) }
+    var audioPanel by remember { mutableStateOf(false) }
+    var brightnessPanel by remember { mutableStateOf(false) }
     var taskMenu by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
 
     Box(
         Modifier
             .fillMaxSize()
             .graphicsLayer { this.alpha = alpha }
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        lerp(base, Color.Black, 0.28f),
-                        lerp(base, Color.Black, 0.62f),
-                        Color(0xFF121010),
-                    ),
-                ),
-            ),
+            .background(Color(0xFF33565C)),
     ) {
-        Column(
-            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
-        ) {
+        Image(
+            painter = painterResource(R.drawable.bg_focus_dawn),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize(),
+        )
+
+        BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().displayCutoutPadding()) {
+        val compact = maxHeight < 560.dp
+        Column(Modifier.fillMaxSize()) {
             FocusTopBar(
                 immersive = ui.immersive,
-                audioPlaying = ui.audioPlaying,
                 keepScreenOn = ui.keepScreenOn,
                 onBack = onExit,
                 onToggleImmersive = viewModel::toggleImmersive,
-                onToggleAudio = viewModel::toggleAudio,
                 onToggleKeepScreenOn = { viewModel.setKeepScreenOn(!ui.keepScreenOn) },
                 onShare = {
                     SharePosterUtils.share(
@@ -235,186 +284,119 @@ fun FocusTimerScreen(
                 },
             )
 
-            // 中部可滚动：引语、圆环、任务信息与准备态选择器
-            Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
+            if (compact) {
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    "\u201C$quote\u201D",
-                    color = Color.White.copy(alpha = 0.62f),
-                    fontSize = 14.sp,
-                    fontStyle = FontStyle.Italic,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                )
-                Spacer(Modifier.height(12.dp))
+            } else {
+                QuoteBlock(quote)
+            }
 
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
-                        Canvas(Modifier.fillMaxSize()) {
-                            val stroke = 4.dp.toPx()
-                            drawArc(
-                                color = Color.White.copy(alpha = 0.14f),
-                                startAngle = -90f, sweepAngle = 360f, useCenter = false,
-                                topLeft = Offset(stroke / 2, stroke / 2),
-                                size = Size(size.width - stroke, size.height - stroke),
-                                style = Stroke(stroke, cap = StrokeCap.Round),
-                            )
-                            drawArc(
-                                color = Color.White.copy(alpha = 0.86f),
-                                startAngle = -90f, sweepAngle = 360f * progress.coerceIn(0f, 1f), useCenter = false,
-                                topLeft = Offset(stroke / 2, stroke / 2),
-                                size = Size(size.width - stroke, size.height - stroke),
-                                style = Stroke(stroke, cap = StrokeCap.Round),
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            if (timer == null) {
-                                Text(
-                                    "开始",
-                                    color = Color.White,
-                                    fontSize = 52.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.clickable { start() },
-                                )
-                                Text(
-                                    "${ui.focusMinutes} 分钟 · ${if (ui.settings.countUpMode) "正向计时" else "倒计时"}",
-                                    color = Color.White.copy(alpha = 0.70f),
-                                    style = MaterialTheme.typography.labelLarge,
-                                )
-                            } else {
-                                Text(
-                                    TimerEngine.formatClock(displaySeconds),
-                                    color = Color.White,
-                                    fontSize = if (displaySeconds >= 3600) 44.sp else 56.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                Text(
-                                    when {
-                                        timer.isBreak -> "休息中"
-                                        timer.phase == TimerPhase.PAUSED -> "已暂停"
-                                        timer.mode == TimerMode.COUNTUP -> "正向计时"
-                                        else -> "倒计时"
-                                    },
-                                    color = Color.White.copy(alpha = 0.68f),
-                                    style = MaterialTheme.typography.labelLarge,
-                                )
-                            }
-                        }
-                    }
-                }
+            Spacer(Modifier.weight(1f))
 
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    (task?.icon ?: "🎯") + " " + (task?.title ?: "自由专注"),
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                )
-                val statusLine = when {
-                    timer == null -> "选好任务与时长，然后开始"
-                    timer.isBreak -> "休息也是节奏的一部分"
-                    timer.phase == TimerPhase.PAUSED ->
-                        if (ui.stopConfirm != null || ui.recordPrompt != null) "等待你的确认" else "已暂停"
-                    task?.type == TaskType.HABIT ->
-                        "完成后自动打卡 · 第 ${(task.completedPomos + 1).coerceAtLeast(1)} 个番茄"
-                    task != null && timer.mode == TimerMode.COUNTDOWN ->
-                        "第 ${(task.completedPomos + 1).coerceAtLeast(1)} 个番茄"
-                    task != null -> "正向计时 · 完成后确认记录"
-                    else -> "专注进行中"
-                } + if (timer?.strict == true) " · 严格模式" else ""
-                Text(
-                    statusLine,
-                    color = Color.White.copy(alpha = 0.58f),
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                )
-                if (timer?.isBreak == false) {
-                    val crossDayNow = timer?.let {
-                        SessionAttribution.isShifted(it.startedAtEpoch, System.currentTimeMillis(), SystemAppClock.zone())
-                    } == true
-                    if (crossDayNow) {
-                        Text(
-                            if (ui.settings.midnightShift) "已跨天 · 归入开始日" else "已跨天 · 归入结束日",
-                            color = Color.White.copy(alpha = 0.48f),
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
+            CenterBlock(
+                timerActive = timer != null,
+                seconds = displaySeconds,
+                focusMinutes = ui.focusMinutes,
+                countUp = effectiveCountUp,
+                isBreak = timer?.isBreak == true,
+                paused = timer?.phase == TimerPhase.PAUSED,
+                strict = timer?.strict == true,
+                pomoIndex = (task?.completedPomos ?: 0) + 1,
+                crossDay = crossDay,
+                taskTitle = task?.title,
+                taskIcon = task?.icon,
+                taskMenu = taskMenu,
+                onTaskMenuChange = { taskMenu = it },
+                onSelectTask = { id ->
+                    taskMenu = false
+                    viewModel.selectTask(id)
+                },
+                taskList = ui.tasks.filter { it.timerMode != "none" },
+                onStart = start,
+                onMinus = { viewModel.setFocusMinutes(ui.focusMinutes - 5) },
+                onPlus = { viewModel.setFocusMinutes(ui.focusMinutes + 5) },
+                interaction = interaction,
+                compact = compact,
+            )
 
-                if (timer == null) {
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TextButton(onClick = { viewModel.setFocusMinutes(ui.focusMinutes - 5) }) {
-                            Text("−", color = Color.White, fontSize = 24.sp)
-                        }
-                        Text(
-                            "${ui.focusMinutes} 分钟",
-                            color = Color.White.copy(alpha = 0.85f),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        TextButton(onClick = { viewModel.setFocusMinutes(ui.focusMinutes + 5) }) {
-                            Text("+", color = Color.White, fontSize = 24.sp)
-                        }
-                    }
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        TextButton(onClick = { taskMenu = true }) {
-                            Text(
-                                (task?.icon ?: "🎯") + " " + (task?.title ?: "自由专注") + " ▾",
-                                color = Color.White.copy(alpha = 0.85f),
-                            )
-                        }
-                        DropdownMenu(expanded = taskMenu, onDismissRequest = { taskMenu = false }) {
-                            DropdownMenuItem(text = { Text("🎯 自由专注") }, onClick = {
-                                taskMenu = false
-                                viewModel.selectTask(null)
-                            })
-                            ui.tasks.filter { it.timerMode != "none" }.forEach { item ->
-                                key(item.id) {
-                                    DropdownMenuItem(
-                                        text = { Text((item.icon ?: "🌱") + " " + item.title) },
-                                        onClick = {
-                                            taskMenu = false
-                                            viewModel.selectTask(item.id)
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
+            Spacer(Modifier.weight(1f))
+
+            AnimatedVisibility(
+                visible = audioPanel,
+                enter = fadeIn(tween(160)),
+                exit = fadeOut(tween(120)),
+            ) {
+                FocusAudioPanel(
+                    current = ui.audioTrack,
+                    playing = ui.audioPlaying,
+                    onSelect = {
+                        viewModel.selectAudio(it)
+                        audioPanel = false
+                    },
+                )
+            }
+            AnimatedVisibility(
+                visible = brightnessPanel,
+                enter = fadeIn(tween(160)),
+                exit = fadeOut(tween(120)),
+            ) {
+                FocusBrightnessPanel(
+                    value = if (ui.brightness < 0f) 0.6f else ui.brightness,
+                    onChange = viewModel::setBrightness,
+                )
+            }
+
+            if (timer != null) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 40.dp, vertical = 4.dp)
+                        .height(2.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.18f)),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(animatedProgress)
+                            .height(2.dp)
+                            .background(Color.White.copy(alpha = 0.85f)),
+                    )
                 }
-                Spacer(Modifier.height(8.dp))
             }
 
             FocusBottomControls(
-                ui = ui,
-                base = base,
-                audioMenuExpanded = audioMenu,
-                onAudioMenuChange = { audioMenu = it },
-                onSelectAudio = viewModel::selectAudio,
-                onBrightness = viewModel::setBrightness,
-                onReset = viewModel::resetTimer,
-                onStartOrPause = { if (timer == null) start() else viewModel.togglePause() },
-                onStop = viewModel::requestStop,
+                timerActive = timer != null,
+                paused = timer?.phase == TimerPhase.PAUSED,
+                canPause = timer == null || !(timer.strict && timer.phase == TimerPhase.RUNNING),
+                canStop = timer != null,
+                onToggleBrightness = {
+                    haptics.tap()
+                    audioPanel = false
+                    brightnessPanel = !brightnessPanel
+                },
+                onToggleAudio = {
+                    haptics.tap()
+                    brightnessPanel = false
+                    audioPanel = !audioPanel
+                },
+                onStartOrPause = {
+                    haptics.tap()
+                    if (timer == null) start() else viewModel.togglePause()
+                },
+                onReset = {
+                    haptics.tap()
+                    viewModel.resetTimer()
+                },
+                onStop = {
+                    haptics.tap()
+                    viewModel.requestStop()
+                },
             )
+        }
         }
 
         SnackbarHost(
             hostState = snackbar,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 110.dp),
         )
     }
 
@@ -450,6 +432,222 @@ fun FocusTimerScreen(
                 start()
             },
         )
+    }
+}
+
+@Composable
+private fun QuoteBlock(quote: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 44.dp, top = 4.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            "\u201C",
+            fontFamily = FontFamily.Serif,
+            fontSize = 46.sp,
+            lineHeight = 36.sp,
+            color = Color.White.copy(alpha = 0.92f),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            quote,
+            fontFamily = FontFamily.Serif,
+            fontSize = 17.sp,
+            lineHeight = 27.sp,
+            color = Color.White.copy(alpha = 0.92f),
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun CenterBlock(
+    timerActive: Boolean,
+    seconds: Long,
+    focusMinutes: Int,
+    countUp: Boolean,
+    isBreak: Boolean,
+    paused: Boolean,
+    strict: Boolean,
+    pomoIndex: Int,
+    crossDay: Boolean,
+    taskTitle: String?,
+    taskIcon: String?,
+    taskMenu: Boolean,
+    onTaskMenuChange: (Boolean) -> Unit,
+    onSelectTask: (String?) -> Unit,
+    taskList: List<Task>,
+    onStart: () -> Unit,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit,
+    interaction: MutableInteractionSource,
+    compact: Boolean,
+) {
+    val density = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(density.density, density.fontScale.coerceAtMost(1.25f)),
+    ) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (!timerActive) {
+            Text(
+                "开始",
+                fontSize = if (compact) 44.sp else 54.sp,
+                lineHeight = if (compact) 52.sp else 62.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                modifier = Modifier
+                    .clickable(interactionSource = interaction, indication = null) { onStart() }
+                    .padding(horizontal = 36.dp, vertical = 10.dp),
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                StepperText("−", onMinus)
+                Text(
+                    "$focusMinutes 分钟",
+                    color = Color.White.copy(alpha = 0.82f),
+                    fontSize = 13.sp,
+                    letterSpacing = 1.5.sp,
+                    modifier = Modifier.width(92.dp),
+                    textAlign = TextAlign.Center,
+                )
+                StepperText("+", onPlus)
+            }
+            Text(
+                if (countUp) "正向计时 · 手动结束" else "倒计时 · 结束自动打卡",
+                color = Color.White.copy(alpha = 0.42f),
+                fontSize = 10.sp,
+                letterSpacing = 1.sp,
+            )
+        } else {
+            Text(
+                TimerEngine.formatClock(seconds),
+                style = when {
+                    seconds >= 3600 -> FocusTimeCompactStyle
+                    compact -> FocusTimeCompactStyle.copy(fontSize = 48.sp, lineHeight = 56.sp)
+                    else -> FocusTimeStyle
+                },
+                color = Color.White,
+                maxLines = 1,
+                softWrap = false,
+            )
+            Spacer(Modifier.height(if (compact) 12.dp else 22.dp))
+            Text(
+                if (isBreak) "休息" else pomoIndex.toString().padStart(2, '0'),
+                color = Color.White.copy(alpha = 0.88f),
+                fontSize = 13.sp,
+                letterSpacing = 3.sp,
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(
+                buildString {
+                    append(
+                        when {
+                            isBreak -> "休息中"
+                            paused -> "已暂停"
+                            else -> "进行中"
+                        },
+                    )
+                    if (strict) append(" · 严格模式")
+                },
+                color = Color.White.copy(alpha = 0.55f),
+                fontSize = 11.sp,
+                letterSpacing = 1.5.sp,
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
+        Box {
+            Row(
+                Modifier
+                    .then(
+                        if (!timerActive) {
+                            Modifier.clickable(
+                                interactionSource = interaction,
+                                indication = null,
+                            ) { onTaskMenuChange(true) }
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (taskIcon != null) {
+                    Text(taskIcon, fontSize = 12.sp)
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(
+                    taskTitle ?: "自由专注",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 12.sp,
+                    letterSpacing = 0.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!timerActive) {
+                    Spacer(Modifier.width(4.dp))
+                    FocusGlyphIcon(
+                        FocusGlyph.CHEVRON_DOWN,
+                        tint = Color.White.copy(alpha = 0.45f),
+                        modifier = Modifier.size(10.dp),
+                    )
+                }
+            }
+            DropdownMenu(
+                expanded = taskMenu,
+                onDismissRequest = { onTaskMenuChange(false) },
+                containerColor = Color(0xFF24201D),
+            ) {
+                DropdownMenuItem(
+                    text = { Text("自由专注", color = Color(0xFFF1E9E2)) },
+                    onClick = { onSelectTask(null) },
+                )
+                taskList.forEach { item ->
+                    key(item.id) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    (item.icon ?: "🌱") + " " + item.title,
+                                    color = Color(0xFFF1E9E2),
+                                )
+                            },
+                            onClick = { onSelectTask(item.id) },
+                        )
+                    }
+                }
+            }
+        }
+
+        if (timerActive && !isBreak && crossDay) {
+            Text(
+                "已跨天 · 按设置归属",
+                color = Color.White.copy(alpha = 0.35f),
+                fontSize = 10.sp,
+                letterSpacing = 1.sp,
+            )
+        }
+    }
+    }
+}
+
+@Composable
+private fun StepperText(text: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        Modifier
+            .size(48.dp)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, color = Color.White.copy(alpha = 0.72f), fontSize = 20.sp)
     }
 }
 

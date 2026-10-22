@@ -3,8 +3,9 @@ package com.u707t.tomatosprout.ui.settings
 import android.app.TimePickerDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,20 +13,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,15 +41,19 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.BuildConfig
 import com.u707t.tomatosprout.domain.ThemeMode
-import com.u707t.tomatosprout.ui.components.SectionHeader
-import com.u707t.tomatosprout.ui.components.SoftCard
-import com.u707t.tomatosprout.ui.theme.Tomato
+import com.u707t.tomatosprout.ui.components.ConfirmDialog
+import com.u707t.tomatosprout.ui.components.GroupDivider
+import com.u707t.tomatosprout.ui.components.LargeHeader
+import com.u707t.tomatosprout.ui.components.SegmentedTabs
+import com.u707t.tomatosprout.ui.components.SettingGroup
+import com.u707t.tomatosprout.ui.components.SettingRow
+import com.u707t.tomatosprout.ui.theme.Radii
+import com.u707t.tomatosprout.ui.theme.Space
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onOpenWebDav: () -> Unit,
@@ -77,42 +80,40 @@ fun SettingsScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("我的") },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
-        },
+        topBar = { LargeHeader(title = "我的", eyebrow = "番茄芽 · v${BuildConfig.VERSION_NAME}") },
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 4.dp, 16.dp, 90.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = Space.lg,
+                end = Space.lg,
+                top = Space.xs,
+                bottom = 96.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {
-            item {
-                SoftCard {
-                    Text("外观", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(
-                            selected = settings.themeMode == ThemeMode.SYSTEM,
-                            onClick = { viewModel.setTheme(ThemeMode.SYSTEM) },
-                            label = { Text("跟随系统") },
+            item(key = "profile") { ProfileCard() }
+
+            item(key = "appearance") {
+                SettingGroup(title = "外观") {
+                    Column(Modifier.padding(horizontal = Space.lg, vertical = Space.md)) {
+                        Text("主题", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "深色模式使用暖炭灰，避免纯黑与白字的硬边",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        FilterChip(
-                            selected = settings.themeMode == ThemeMode.LIGHT,
-                            onClick = { viewModel.setTheme(ThemeMode.LIGHT) },
-                            label = { Text("浅色") },
-                        )
-                        FilterChip(
-                            selected = settings.themeMode == ThemeMode.DARK,
-                            onClick = { viewModel.setTheme(ThemeMode.DARK) },
-                            label = { Text("深色") },
+                        Spacer(Modifier.height(Space.sm))
+                        val modes = listOf(ThemeMode.SYSTEM, ThemeMode.LIGHT, ThemeMode.DARK)
+                        SegmentedTabs(
+                            options = listOf("跟随系统", "浅色", "深色"),
+                            selectedIndex = modes.indexOf(settings.themeMode).coerceAtLeast(0),
+                            onSelect = { viewModel.setTheme(modes[it]) },
                         )
                     }
-                    Spacer(Modifier.height(8.dp))
+                    GroupDivider()
                     SwitchRow(
                         title = "打卡卡片简约模式",
                         subtitle = "只保留标题、连续天数和完成状态",
@@ -122,41 +123,50 @@ fun SettingsScreen(
                 }
             }
 
-            item {
-                SoftCard {
-                    Text("专注默认值", style = MaterialTheme.typography.titleMedium)
+            item(key = "focus") {
+                SettingGroup(title = "专注") {
                     NumberRow("专注时长", settings.defaultFocusMinutes, 5, 180, viewModel::setFocusMinutes)
+                    GroupDivider()
                     NumberRow("休息时长", settings.defaultBreakMinutes, 5, 30, viewModel::setBreakMinutes)
-                    NumberRow("长休息时长", settings.longBreakMinutes, 10, 60, viewModel::setLongBreakMinutes)
+                    GroupDivider()
+                    NumberRow("长休息", settings.longBreakMinutes, 10, 60, viewModel::setLongBreakMinutes)
+                    GroupDivider()
                     SwitchRow(
                         "忽略 30 秒内的正向计时",
                         "开启时不足 30 秒直接丢弃；关闭时先询问是否记录",
                         settings.ignoreShortFocus,
                         viewModel::setIgnoreShortFocus,
                     )
-                    SwitchRow("默认严格模式", "本次专注不可暂停，提前结束会彻底作废", settings.strictMode, viewModel::setStrict)
+                    GroupDivider()
+                    SwitchRow("默认严格模式", "不可暂停，提前结束会彻底作废", settings.strictMode, viewModel::setStrict)
+                    GroupDivider()
                     SwitchRow("默认正计时", "从 0 开始累计，手动结束", settings.countUpMode, viewModel::setCountUp)
-                    SwitchRow("午夜模式", "跨天专注默认记在结束日；开启后强制记在开始日", settings.midnightShift, viewModel::setMidnight)
+                    GroupDivider()
+                    SwitchRow("午夜模式", "跨天专注强制记在开始日", settings.midnightShift, viewModel::setMidnight)
                 }
             }
 
-            item {
-                SoftCard {
-                    Text("提醒", style = MaterialTheme.typography.titleMedium)
+            item(key = "reminder") {
+                SettingGroup(title = "提醒") {
                     SwitchRow(
                         "允许通知",
                         "关闭后打卡与计时不受影响，只是不再提醒",
                         settings.notificationsEnabled,
                         viewModel::setNotifications,
                     )
+                    GroupDivider()
                     SwitchRow("免打扰时段", "该时段内不发送提醒", settings.dndEnabled, viewModel::setDnd)
                     if (settings.dndEnabled) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                            Text("从", modifier = Modifier.weight(1f))
+                        GroupDivider()
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("从", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                             TextButton(onClick = {
                                 pickTime(context, settings.dndStart, viewModel::setDndStart)
                             }) { Text(settings.dndStart) }
-                            Text("到")
+                            Text("到", style = MaterialTheme.typography.bodyLarge)
                             TextButton(onClick = {
                                 pickTime(context, settings.dndEnd, viewModel::setDndEnd)
                             }) { Text(settings.dndEnd) }
@@ -165,72 +175,128 @@ fun SettingsScreen(
                 }
             }
 
-            item {
-                SoftCard {
-                    Text("数据与同步", style = MaterialTheme.typography.titleMedium)
+            item(key = "data") {
+                SettingGroup(title = "数据") {
                     SettingRow(
-                        "WebDAV 同步",
-                        if (settings.webDavServer.isBlank()) "未配置 · 全程不会发起网络请求"
+                        title = "WebDAV 同步",
+                        subtitle = if (settings.webDavServer.isBlank()) "未配置 · 全程不会发起网络请求"
                         else "上次同步：" + (settings.lastSyncedAt?.let { formatTime(it) } ?: "从未"),
                         onClick = onOpenWebDav,
                     )
-                    SettingRow("导出 JSON 备份", "任务、打卡、专注、徽章与设置") {
-                        jsonExport.launch("tomatosprout-backup-${LocalDate.now()}.json")
-                    }
-                    SettingRow("导出 CSV", "打卡记录，可用 Excel 查看") {
-                        csvExport.launch("tomatosprout-checkins-${LocalDate.now()}.csv")
-                    }
-                    SettingRow("导入备份", "导入前会做字段校验，冲突保留本地版本") {
-                        importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-                    }
+                    GroupDivider()
                     SettingRow(
-                        "清除所有数据",
-                        "二次确认；打卡与专注以软删除保留，不再显示",
-                        dangerous = true,
-                    ) { confirmClear = true }
+                        title = "导出 JSON 备份",
+                        subtitle = "任务、打卡、专注、徽章与设置",
+                        onClick = { jsonExport.launch("tomatosprout-backup-${LocalDate.now()}.json") },
+                    )
+                    GroupDivider()
+                    SettingRow(
+                        title = "导出 CSV",
+                        subtitle = "打卡记录，可用 Excel 查看",
+                        onClick = { csvExport.launch("tomatosprout-checkins-${LocalDate.now()}.csv") },
+                    )
+                    GroupDivider()
+                    SettingRow(
+                        title = "导入备份",
+                        subtitle = "字段校验后再写入，冲突保留本地版本",
+                        onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                    )
+                    GroupDivider()
+                    SettingRow(
+                        title = "清除所有数据",
+                        subtitle = "不可撤销，建议先导出备份",
+                        danger = true,
+                        onClick = { confirmClear = true },
+                    )
                 }
             }
 
-            item {
-                SoftCard {
-                    Text("更多", style = MaterialTheme.typography.titleMedium)
-                    SettingRow("成就徽章", "把坚持过的事点亮") { onOpenBadges() }
-                    SettingRow("历史时间轴", "月历 + 当日记录，可写心得与补卡") { onOpenHistory() }
-                    SettingRow("愿望清单", "只属于自己的小愿望") { onOpenWishlist() }
-                    SettingRow("关于番茄芽", "版本 ${BuildConfig.VERSION_NAME} · 隐私说明") { onOpenAbout() }
+            item(key = "more") {
+                SettingGroup(title = "更多") {
+                    SettingRow(title = "成就徽章", subtitle = "把坚持过的事点亮", onClick = onOpenBadges)
+                    GroupDivider()
+                    SettingRow(title = "历史时间轴", subtitle = "月历 + 当日记录，可写心得与补卡", onClick = onOpenHistory)
+                    GroupDivider()
+                    SettingRow(title = "愿望清单", subtitle = "只属于自己的小愿望", onClick = onOpenWishlist)
+                    GroupDivider()
+                    SettingRow(
+                        title = "关于番茄芽",
+                        subtitle = "版本 ${BuildConfig.VERSION_NAME} · 隐私说明",
+                        onClick = onOpenAbout,
+                    )
                 }
             }
 
-            item {
+            item(key = "privacy") {
                 Text(
                     "番茄芽不收集任何用户数据，没有广告、没有账号体系。WebDAV 数据只存在你自己的服务器上。",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 4.dp),
+                    modifier = Modifier.padding(horizontal = Space.xs, vertical = Space.sm),
                 )
             }
         }
     }
 
     if (confirmClear) {
-        AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text("确定清除所有数据？") },
-            text = { Text("习惯、打卡、专注记录和愿望都会从界面消失。此操作不可撤销；如需保留，请先导出 JSON 备份。") },
-            confirmButton = {
-                TextButton(onClick = { confirmClear = false; viewModel.clearAll() }) {
-                    Text("清除", color = MaterialTheme.colorScheme.error)
-                }
+        ConfirmDialog(
+            title = "确定清除所有数据？",
+            message = "习惯、打卡、专注记录和愿望都会从界面消失。此操作不可撤销；如需保留，请先导出 JSON 备份。",
+            confirmLabel = "清除",
+            destructive = true,
+            onConfirm = {
+                confirmClear = false
+                viewModel.clearAll()
             },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
+            onDismiss = { confirmClear = false },
         )
     }
 }
 
 @Composable
+private fun ProfileCard() {
+    Surface(
+        shape = RoundedCornerShape(Radii.md),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.padding(Space.lg),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(52.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(Radii.sm)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("🍅", fontSize = 26.sp)
+            }
+            Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+                Text("番茄芽", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "不索权 · 不打扰 · 不空洞",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                "v${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
 private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = Space.md)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             if (subtitle != null) {
                 Text(
@@ -246,38 +312,31 @@ private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChan
 
 @Composable
 private fun NumberRow(label: String, value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        TextButton(onClick = { onChange((value - 5).coerceAtLeast(min)) }) { Text("−") }
-        Text("$value 分", fontWeight = FontWeight.Medium)
-        TextButton(onClick = { onChange((value + 5).coerceAtMost(max)) }) { Text("+") }
-    }
-}
-
-@Composable
-private fun SettingRow(
-    title: String,
-    subtitle: String,
-    dangerous: Boolean = false,
-    onClick: () -> Unit,
-) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
+        Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.sm, top = Space.xs, bottom = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
             Text(
-                title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (dangerous) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                subtitle,
+                "$value 分钟",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text("›", fontSize = 22.sp, color = if (dangerous) MaterialTheme.colorScheme.error else Tomato)
+        TextButton(
+            onClick = { onChange((value - 5).coerceAtLeast(min)) },
+            enabled = value > min,
+        ) { Text("−", fontSize = 20.sp) }
+        Text(
+            "$value",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.width(36.dp),
+        )
+        TextButton(
+            onClick = { onChange((value + 5).coerceAtMost(max)) },
+            enabled = value < max,
+        ) { Text("+", fontSize = 20.sp) }
     }
 }
 

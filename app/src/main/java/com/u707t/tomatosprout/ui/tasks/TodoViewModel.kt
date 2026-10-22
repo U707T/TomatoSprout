@@ -181,7 +181,8 @@ class TodoViewModel @Inject constructor(
                     messages.emit(
                         if (result.streak > 0) "已打卡 · 连续 ${result.streak} 天" else "已打卡",
                     )
-                is CheckInResult.Undone -> messages.emit(result.message)
+                // 撤销打卡的反馈由首页的 Snackbar（带「撤销」）负责，避免两条提示互相覆盖
+                is CheckInResult.Undone -> Unit
                 is CheckInResult.Rejected -> messages.emit(result.reason)
             }
         }

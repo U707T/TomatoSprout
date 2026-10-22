@@ -11,6 +11,10 @@ enum class FocusAudioOption(val label: String, val resId: Int?) {
     NONE("无音乐", null),
     WHITE_NOISE("白噪音", R.raw.white_noise),
     BROWN_NOISE("棕色噪音", R.raw.brown_noise),
+    WIND("树叶风声", R.raw.wind_leaf),
+    FIRE("篝火", R.raw.bonfire_pure),
+    PIANO("钢琴", R.raw.piano),
+    MUSIC_BOX("八音盒", R.raw.music_box),
 }
 
 /** 本地 raw 音频循环播放，无网络、无第三方播放器依赖。 */

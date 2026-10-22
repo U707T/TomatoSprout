@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 /**
  * v1.6 路由：
- * - 底部导航只有 Todo / Stats / Settings；
+ * - 底部导航为 Todo / Stats / Settings，中间另有「专注」动作入口；
  * - History 是二级页，从统计页或任务长按面板进入；
  * - Focus 是全屏页，不显示底栏。
  */

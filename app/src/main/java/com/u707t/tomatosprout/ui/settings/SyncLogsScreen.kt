@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.u707t.tomatosprout.ui.components.BackBar
 import com.u707t.tomatosprout.ui.components.EmptyState
 import com.u707t.tomatosprout.ui.components.SoftCard
 import java.time.Instant
@@ -45,20 +46,13 @@ fun SyncLogsScreen(onBack: () -> Unit, viewModel: WebDavViewModel = hiltViewMode
     LaunchedEffect(Unit) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("同步日志") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "返回") }
-                },
-                actions = {
-                    if (logs.isNotEmpty()) {
-                        IconButton(onClick = viewModel::clearLogs) {
-                            Icon(Icons.Default.Delete, contentDescription = "清空日志")
-                        }
+            BackBar("同步日志", onBack, actions = {
+                if (logs.isNotEmpty()) {
+                    IconButton(onClick = viewModel::clearLogs) {
+                        Icon(Icons.Default.Delete, contentDescription = "清空日志")
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
+                }
+            })
         },
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,

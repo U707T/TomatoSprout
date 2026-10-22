@@ -25,12 +25,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -38,9 +36,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,13 +54,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.u707t.tomatosprout.ui.components.AppBottomSheet
+import com.u707t.tomatosprout.ui.components.BackBar
+import com.u707t.tomatosprout.ui.theme.Radii
+import com.u707t.tomatosprout.ui.theme.Space
 import com.u707t.tomatosprout.ui.theme.Tomato
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
     onBack: () -> Unit,
@@ -76,25 +74,15 @@ fun HistoryScreen(
     var noteRecord by remember { mutableStateOf<HistoryRecordUi?>(null) }
     var noteText by remember { mutableStateOf("") }
     var showMakeup by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     LaunchedEffect(Unit) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(ui.error) { ui.error?.let { snackbar.showSnackbar(it) } }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("历史") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    TextButton(onClick = viewModel::goToday) { Text("今天") }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
+            BackBar("历史", onBack, actions = {
+                TextButton(onClick = viewModel::goToday) { Text("今天") }
+            })
         },
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
@@ -190,35 +178,29 @@ fun HistoryScreen(
     }
 
     noteRecord?.let { record ->
-        ModalBottomSheet(
-            onDismissRequest = { noteRecord = null },
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                Text(
-                    "给「${record.title}」写一句心得",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = noteText,
-                    onValueChange = { noteText = it.take(300) },
-                    label = { Text("此刻的感受 / 收获（可选）") },
-                    minLines = 3,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = {
-                        viewModel.saveNote(record, noteText)
-                        noteRecord = null
-                    },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                ) { Text("保存心得") }
-                Spacer(Modifier.height(20.dp))
-            }
+        AppBottomSheet(onDismiss = { noteRecord = null }) {
+            Text(
+                "给「${record.title}」写一句心得",
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Spacer(Modifier.height(Space.md))
+            OutlinedTextField(
+                value = noteText,
+                onValueChange = { noteText = it.take(300) },
+                label = { Text("此刻的感受 / 收获（可选）") },
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(Space.md))
+            Button(
+                onClick = {
+                    viewModel.saveNote(record, noteText)
+                    noteRecord = null
+                },
+                shape = RoundedCornerShape(Radii.sm),
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+            ) { Text("保存心得") }
+            Spacer(Modifier.height(Space.sm))
         }
     }
 
@@ -273,11 +255,11 @@ private fun MonthCalendar(
     onNext: () -> Unit,
 ) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(Radii.md),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(Space.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onPrevious) { Text("‹") }
                 Text(
@@ -327,7 +309,7 @@ private fun MonthCalendar(
                                                 .clip(CircleShape)
                                                 .background(
                                                     when {
-                                                        selectedDay -> Tomato
+                                                        selectedDay -> MaterialTheme.colorScheme.primary
                                                         date == today -> MaterialTheme.colorScheme.primaryContainer
                                                         else -> Color.Transparent
                                                     },
@@ -337,7 +319,7 @@ private fun MonthCalendar(
                                             Text(
                                                 "${date.dayOfMonth}",
                                                 color = if (selectedDay) {
-                                                    Color.White
+                                                    MaterialTheme.colorScheme.onPrimary
                                                 } else {
                                                     MaterialTheme.colorScheme.onSurface
                                                 },
@@ -349,7 +331,7 @@ private fun MonthCalendar(
                                                 .padding(top = 2.dp)
                                                 .size(4.dp)
                                                 .clip(CircleShape)
-                                                .background(if (hasRecord) Tomato else Color.Transparent),
+                                                .background(if (hasRecord) MaterialTheme.colorScheme.primary else Color.Transparent),
                                         )
                                     }
                                 }
@@ -409,12 +391,20 @@ private fun TimelineRecordCard(record: HistoryRecordUi, onClick: () -> Unit) {
                 .weight(1f)
                 .padding(bottom = 8.dp)
                 .then(if (record.taskDeleted) Modifier else Modifier.clickable(onClick = onClick)),
-            shape = RoundedCornerShape(16.dp),
-            color = accent.copy(alpha = if (record.taskDeleted) 0.08f else 0.12f),
+            shape = RoundedCornerShape(Radii.sm),
+            color = MaterialTheme.colorScheme.surface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
             Column(Modifier.fillMaxWidth().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (record.kind == "focus") "🍅" else "✓", fontSize = 16.sp)
+                    Box(
+                        Modifier
+                            .padding(end = 8.dp)
+                            .size(width = 3.dp, height = 16.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(accent),
+                    )
+                    Text(if (record.kind == "focus") "🍅" else "✓", fontSize = 14.sp)
                     Text(
                         record.title,
                         style = MaterialTheme.typography.bodyLarge,
@@ -442,7 +432,7 @@ private fun TimelineRecordCard(record: HistoryRecordUi, onClick: () -> Unit) {
                     }
                     LinearProgressIndicator(
                         progress = { progress },
-                        modifier = Modifier.fillMaxWidth().height(4.dp),
+                        modifier = Modifier.fillMaxWidth().height(3.dp),
                         color = accent,
                         trackColor = accent.copy(alpha = 0.15f),
                     )

@@ -1,6 +1,7 @@
 package com.u707t.tomatosprout.ui.focus
 
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,12 +9,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.u707t.tomatosprout.domain.InterruptReason
 import com.u707t.tomatosprout.ui.theme.Tomato
@@ -27,6 +31,10 @@ fun RecordPromptDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDiscard,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = DialogSurface,
+        titleContentColor = DialogInk,
+        textContentColor = DialogMuted,
         title = { Text("记录这次专注？") },
         text = {
             Text(
@@ -49,6 +57,10 @@ fun StopConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = DialogSurface,
+        titleContentColor = DialogInk,
+        textContentColor = DialogMuted,
         title = { Text("结束本次专注？") },
         text = {
             Column {
@@ -73,11 +85,23 @@ fun StopConfirmDialog(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         InterruptReason.entries.forEach { reason ->
-                            FilterChip(
-                                selected = confirm.reason == reason,
+                            val selected = confirm.reason == reason
+                            Surface(
                                 onClick = { onReason(reason) },
-                                label = { Text(reason.label) },
-                            )
+                                shape = RoundedCornerShape(50),
+                                color = if (selected) Tomato.copy(alpha = 0.24f) else Color.Transparent,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (selected) Tomato.copy(alpha = 0.65f) else Color.White.copy(alpha = 0.18f),
+                                ),
+                            ) {
+                                Text(
+                                    reason.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (selected) Color(0xFFFFB3A3) else Color.White.copy(alpha = 0.68f),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -100,6 +124,10 @@ fun SessionSummaryDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = DialogSurface,
+        titleContentColor = DialogInk,
+        textContentColor = DialogMuted,
         title = {
             Text(
                 when {
@@ -201,3 +229,7 @@ fun SessionSummaryDialog(
         },
     )
 }
+
+private val DialogSurface = Color(0xFF241E1A)
+private val DialogInk = Color(0xFFF1E9E2)
+private val DialogMuted = Color(0xFFC9BCB2)

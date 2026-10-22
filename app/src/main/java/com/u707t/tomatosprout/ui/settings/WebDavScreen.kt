@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -44,7 +45,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.u707t.tomatosprout.ui.components.BackBar
 import com.u707t.tomatosprout.ui.components.SoftCard
+import com.u707t.tomatosprout.ui.theme.Radii
+import com.u707t.tomatosprout.ui.theme.Space
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -79,26 +83,25 @@ fun WebDavScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("WebDAV 同步") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "返回") }
-                },
-                actions = {
-                    TextButton(onClick = onOpenLogs) { Text("日志") }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
+            BackBar("WebDAV 同步", onBack, actions = {
+                TextButton(onClick = onOpenLogs) { Text("日志") }
+            })
         },
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {
+            Text(
+                "只在你点「立即同步」时联网。服务器由你自己提供，没有托管后端，也没有账号体系。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             SoftCard {
                 Text("服务器", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 OutlinedTextField(
                     value = server,
                     onValueChange = { server = it },
@@ -108,7 +111,7 @@ fun WebDavScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it },
@@ -116,7 +119,7 @@ fun WebDavScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
@@ -126,7 +129,7 @@ fun WebDavScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 OutlinedTextField(
                     value = path,
                     onValueChange = { path = it },
@@ -154,30 +157,33 @@ fun WebDavScreen(
             }
 
             if (busy) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(Space.md))
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(
+            Spacer(Modifier.height(Space.md))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.fillMaxWidth()) {
+                Button(
                     onClick = { viewModel.save(server, username, password, path, wifiOnly) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(48.dp),
                     enabled = !busy,
+                    shape = RoundedCornerShape(Radii.sm),
                 ) { Text("保存") }
                 OutlinedButton(
                     onClick = { viewModel.test(server, username, password, path, wifiOnly) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(48.dp),
                     enabled = !busy,
+                    shape = RoundedCornerShape(Radii.sm),
                 ) { Text("测试连接") }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(Space.sm))
             Button(
                 onClick = { viewModel.sync(server, username, password, path, wifiOnly) },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 enabled = !busy && server.isNotBlank(),
+                shape = RoundedCornerShape(Radii.sm),
             ) { Text("立即同步") }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(Space.xs))
             SoftCard {
                 Text("同步怎么工作", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(4.dp))
@@ -186,7 +192,7 @@ fun WebDavScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 Text(
                     "上次同步：" + (settings.lastSyncedAt?.let {
                         Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())
@@ -200,7 +206,7 @@ fun WebDavScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(Space.xxl))
         }
     }
 }

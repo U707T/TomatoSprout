@@ -1,5 +1,7 @@
 package com.u707t.tomatosprout.ui.stats
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,20 +13,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -34,9 +34,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.domain.CheckInLedger
@@ -44,18 +44,25 @@ import com.u707t.tomatosprout.domain.DayAggregate
 import com.u707t.tomatosprout.domain.HabitSchedule
 import com.u707t.tomatosprout.domain.HeatmapMetric
 import com.u707t.tomatosprout.domain.StatsData
+import com.u707t.tomatosprout.ui.components.ConfirmDialog
 import com.u707t.tomatosprout.ui.components.EmptyState
+import com.u707t.tomatosprout.ui.components.GroupDivider
 import com.u707t.tomatosprout.ui.components.HabitProgressRow
+import com.u707t.tomatosprout.ui.components.LargeHeader
+import com.u707t.tomatosprout.ui.components.Metric
 import com.u707t.tomatosprout.ui.components.MonthHeatmap
+import com.u707t.tomatosprout.ui.components.ProgressRing
+import com.u707t.tomatosprout.ui.components.SectionCaption
+import com.u707t.tomatosprout.ui.components.SegmentedTabs
+import com.u707t.tomatosprout.ui.components.SettingRow
 import com.u707t.tomatosprout.ui.components.SoftCard
-import com.u707t.tomatosprout.ui.components.StatTile
 import com.u707t.tomatosprout.ui.components.WeekOverview
 import com.u707t.tomatosprout.ui.components.YearHeatmap
-import com.u707t.tomatosprout.ui.theme.Tomato
+import com.u707t.tomatosprout.ui.theme.Radii
+import com.u707t.tomatosprout.ui.theme.Space
 import java.time.LocalDate
 import java.time.YearMonth
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(
     onAddHabit: () -> Unit,
@@ -67,34 +74,48 @@ fun StatsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("统计") },
-                actions = {
-                    TextButton(onClick = { onOpenHistory(null, viewModel.initialTaskFilter) }) {
-                        Text("历史")
+            LargeHeader(
+                title = "统计",
+                eyebrow = "只保存在本机",
+                trailing = {
+                    IconButton(onClick = { onOpenHistory(null, viewModel.initialTaskFilter) }) {
+                        Icon(
+                            Icons.Default.DateRange,
+                            contentDescription = "历史时间轴",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         when (val s = state) {
-            StatsUiState.Loading -> Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            is StatsUiState.Empty -> Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
+            StatsUiState.Loading -> Box(
+                Modifier.fillMaxSize().padding(padding),
+                Alignment.Center,
+            ) { CircularProgressIndicator() }
+
+            is StatsUiState.Empty -> Box(
+                Modifier.fillMaxSize().padding(padding),
+                Alignment.Center,
+            ) {
                 EmptyState(
                     emoji = "📊",
                     title = "还没有可以回顾的记录",
-                    message = "先创建习惯或完成一次专注，统计会自动汇成环形图、柱状图与时间轴。",
+                    message = "先创建习惯或完成一次专注，统计会自动汇成趋势、分布与时间轴。",
                     actionLabel = "创建习惯",
                     onAction = onAddHabit,
                 )
             }
-            is StatsUiState.Error -> Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
+
+            is StatsUiState.Error -> Box(
+                Modifier.fillMaxSize().padding(padding),
+                Alignment.Center,
+            ) {
                 Text(s.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
             }
+
             is StatsUiState.Content -> StatsContent(
                 data = s.data,
                 dashboard = s.dashboard,
@@ -120,13 +141,13 @@ private fun StatsContent(
     var year by remember(dashboard.selectedDate) { mutableIntStateOf(dashboard.selectedDate.year) }
     var yearView by remember { mutableStateOf(false) }
     var heatmapMetric by remember { mutableStateOf(HeatmapMetric.CHECK_INS) }
-    // 区间完成率要按天判断达标；先建一次索引，避免每个日期都重建一遍
     val checkLedger = remember(data.checks) { CheckInLedger(data.checks) }
 
     val week = (6 downTo 0).map { offset ->
         val date = data.today.minusDays(offset.toLong())
         data.days[date] ?: DayAggregate(date)
     }
+
     fun aggregateRate(days: Int): Float {
         var scheduled = 0
         var met = 0
@@ -138,115 +159,123 @@ private fun StatsContent(
         return if (scheduled == 0) 0f else met.toFloat() / scheduled
     }
 
+    val rate30 = aggregateRate(30)
+
     LazyColumn(
         Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(16.dp, 4.dp, 16.dp, 100.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(start = Space.lg, end = Space.lg, top = Space.xs, bottom = 100.dp),
+        verticalArrangement = Arrangement.spacedBy(Space.md),
     ) {
-        item(key = "cumulative") { CumulativeOverviewCard(data, dashboard) }
-        item(key = "day") {
-            DayOverviewCard(
+        item(key = "hero") {
+            HeroCard(
+                data = data,
                 dashboard = dashboard,
-                onPrevious = { viewModel.shiftDate(-1) },
-                onNext = { viewModel.shiftDate(1) },
+                rate30 = rate30,
+                onClick = { onOpenHistory(dashboard.selectedDate, viewModel.initialTaskFilter) },
             )
         }
+        item(key = "day") {
+            SoftCard {
+                DayOverviewCard(
+                    dashboard = dashboard,
+                    onPrevious = { viewModel.shiftDate(-1) },
+                    onNext = { viewModel.shiftDate(1) },
+                )
+            }
+        }
+        item(key = "week") {
+            SoftCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("本周节奏", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    Text(
+                        "共 ${week.sumOf { it.focusSeconds } / 60} 分钟",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.height(Space.sm))
+                WeekOverview(days = week, today = data.today)
+            }
+        }
         item(key = "distribution") {
-            DistributionCard(
-                dashboard = dashboard,
-                onRange = viewModel::setRange,
-                onViewRecords = { onOpenHistory(dashboard.selectedDate, viewModel.initialTaskFilter) },
-            )
+            SoftCard {
+                DistributionCard(
+                    dashboard = dashboard,
+                    onRange = viewModel::setRange,
+                    onViewRecords = { onOpenHistory(dashboard.selectedDate, viewModel.initialTaskFilter) },
+                )
+            }
         }
         item(key = "bars") {
             SoftCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionCaption("月度趋势", Modifier.weight(1f))
                     TextButton(onClick = viewModel::previousMonth) { Text("‹") }
                     Text(
-                        "${dashboard.month.year} 年 ${dashboard.month.monthValue} 月",
+                        "${dashboard.month.year}.${dashboard.month.monthValue}",
                         style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.weight(1f),
-                        textAlign = TextAlign.Center,
                     )
                     TextButton(onClick = viewModel::nextMonth) { Text("›") }
                 }
                 MonthlyBarChart(
                     dashboard = dashboard,
-                    onBarClick = { day ->
-                        onOpenHistory(dashboard.month.atDay(day), viewModel.initialTaskFilter)
-                    },
+                    onBarClick = { day -> onOpenHistory(dashboard.month.atDay(day), viewModel.initialTaskFilter) },
                 )
             }
         }
         item(key = "hourly") {
-            SoftCard {
-                HourlyFocusChart(dashboard.hours, dashboard.bestHour)
-            }
+            SoftCard { HourlyFocusChart(dashboard.hours, dashboard.bestHour) }
         }
         item(key = "interrupts") {
-            SoftCard {
-                InterruptReasonsCard(dashboard.interruptReasons)
-            }
+            SoftCard { InterruptReasonsCard(dashboard.interruptReasons) }
         }
-        item(key = "streak") {
+        item(key = "record") {
             SoftCard {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    StatTile("当前连续", "${data.currentStreak}", Modifier.weight(1f), "天")
-                    StatTile("最长连续", "${data.longestStreak}", Modifier.weight(1f), "天")
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.lg),
+                ) {
+                    Metric("${data.currentStreak}", "当前连续", Modifier.weight(1f), unit = "天")
+                    Metric("${data.longestStreak}", "最长连续", Modifier.weight(1f), unit = "天")
+                    Metric("${data.perfectDays}", "圆满日", Modifier.weight(1f), unit = "天")
                 }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    StatTile("累计打卡", "${data.totalCheckIns}", Modifier.weight(1f), "次")
-                    StatTile("累计专注", "${data.totalFocusSeconds / 3600}", Modifier.weight(1f), "小时")
+                Spacer(Modifier.height(Space.md))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                Spacer(Modifier.height(Space.md))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.lg),
+                ) {
+                    Metric("${data.totalCheckIns}", "累计打卡", Modifier.weight(1f), unit = "次")
+                    Metric("${data.totalFocusSeconds / 3600}", "累计专注", Modifier.weight(1f), unit = "小时")
+                    Metric("${(rate30 * 100).toInt()}", "近 30 天", Modifier.weight(1f), unit = "%")
                 }
-                Spacer(Modifier.height(10.dp))
                 Text(
-                    "共 ${data.checkInDays} 个打卡日 · ${data.totalPomos} 个番茄 · ${data.perfectDays} 个圆满日",
+                    "共 ${data.checkInDays} 个打卡日 · ${data.totalPomos} 个番茄",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.md),
                 )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    StatTile("本周完成率", "${(aggregateRate(7) * 100).toInt()}", Modifier.weight(1f), "%")
-                    StatTile("本月完成率", "${(aggregateRate(30) * 100).toInt()}", Modifier.weight(1f), "%")
-                }
-            }
-        }
-        item(key = "week") {
-            SoftCard {
-                Text("本周纵览", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(4.dp))
-                WeekOverview(days = week, today = data.today)
             }
         }
         item(key = "heatmap") {
             SoftCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("日历热力图", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    FilterChip(
-                        selected = !yearView,
-                        onClick = { yearView = false },
-                        label = { Text("月") },
-                    )
-                    Spacer(Modifier.size(4.dp))
-                    FilterChip(
-                        selected = yearView,
-                        onClick = { yearView = true },
-                        label = { Text("年") },
+                    SegmentedTabs(
+                        options = listOf("月", "年"),
+                        selectedIndex = if (yearView) 1 else 0,
+                        onSelect = { yearView = it == 1 },
+                        modifier = Modifier.width(112.dp),
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(
-                        selected = heatmapMetric == HeatmapMetric.CHECK_INS,
-                        onClick = { heatmapMetric = HeatmapMetric.CHECK_INS },
-                        label = { Text("打卡次数") },
-                    )
-                    FilterChip(
-                        selected = heatmapMetric == HeatmapMetric.FOCUS_DURATION,
-                        onClick = { heatmapMetric = HeatmapMetric.FOCUS_DURATION },
-                        label = { Text("专注时长") },
-                    )
-                }
+                Spacer(Modifier.height(Space.md))
+                SegmentedTabs(
+                    options = listOf("打卡次数", "专注时长"),
+                    selectedIndex = if (heatmapMetric == HeatmapMetric.CHECK_INS) 0 else 1,
+                    onSelect = { heatmapMetric = if (it == 0) HeatmapMetric.CHECK_INS else HeatmapMetric.FOCUS_DURATION },
+                )
+                Spacer(Modifier.height(Space.md))
                 val heatmapDays = data.days.mapValues { (_, day) ->
                     if (heatmapMetric == HeatmapMetric.CHECK_INS) {
                         DayAggregate(day.date, checkIns = day.checkIns)
@@ -255,18 +284,18 @@ private fun StatsContent(
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = {
+                    TextButton(onClick = {
                         if (yearView) year -= 1 else month = month.minusMonths(1)
-                    }) { Icon(Icons.Default.ArrowBack, contentDescription = "上一页") }
+                    }) { Text("‹") }
                     Text(
                         if (yearView) "$year 年" else "${month.year} 年 ${month.monthValue} 月",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.labelLarge,
                         modifier = Modifier.weight(1f),
                         textAlign = TextAlign.Center,
                     )
                     TextButton(onClick = {
                         if (yearView) year += 1 else month = month.plusMonths(1)
-                    }) { Text("下一页") }
+                    }) { Text("›") }
                 }
                 if (yearView) {
                     YearHeatmap(year = year, days = heatmapDays)
@@ -276,7 +305,7 @@ private fun StatsContent(
                         days = heatmapDays,
                         onDayClick = { onOpenHistory(it, viewModel.initialTaskFilter) },
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(Space.sm))
                     Text(
                         "颜色越深，代表当天的记录越多。点击某一天进入历史时间轴。",
                         style = MaterialTheme.typography.labelMedium,
@@ -285,46 +314,38 @@ private fun StatsContent(
                 }
             }
         }
-        item(key = "historyEntry") {
-            SoftCard(onClick = { onOpenHistory(dashboard.selectedDate, viewModel.initialTaskFilter) }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🗓", fontSize = 28.sp)
-                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                        Text("历史时间轴", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "月历 + 当日记录 · 可写心得、补卡（最近 7 天）",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Text("查看 ›", color = Tomato, style = MaterialTheme.typography.labelLarge)
-                }
-            }
-        }
         if (data.habits.isNotEmpty()) {
             item(key = "habits") {
                 SoftCard {
                     Text("习惯完成率", style = MaterialTheme.typography.titleMedium)
-                    data.habits.forEach { habit ->
-                        key(habit.task.id) { HabitProgressRow(habit) }
+                    Spacer(Modifier.height(Space.xs))
+                    data.habits.forEachIndexed { index, habit ->
+                        key(habit.task.id) {
+                            HabitProgressRow(habit)
+                            if (index != data.habits.lastIndex) GroupDivider()
+                        }
                     }
                 }
             }
         }
-        item(key = "badges") {
-            SoftCard(onClick = onOpenBadges) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🏅", fontSize = 28.sp)
-                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                        Text("成就徽章", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "已解锁 ${data.unlockedBadges} / ${data.badges.size}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Text("查看 ›", color = Tomato, style = MaterialTheme.typography.labelLarge)
-                }
+        item(key = "entries") {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Radii.md))
+                    .background(MaterialTheme.colorScheme.surface),
+            ) {
+                SettingRow(
+                    title = "历史时间轴",
+                    subtitle = "月历 + 当日记录 · 可写心得、补卡",
+                    onClick = { onOpenHistory(dashboard.selectedDate, viewModel.initialTaskFilter) },
+                )
+                GroupDivider()
+                SettingRow(
+                    title = "成就徽章",
+                    subtitle = "已解锁 ${data.unlockedBadges} / ${data.badges.size}",
+                    onClick = onOpenBadges,
+                )
             }
         }
         item(key = "footer") {
@@ -332,8 +353,60 @@ private fun StatsContent(
                 "统计只保存在本机。删除任务不会删除历史打卡与专注记录。",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp),
+                modifier = Modifier.padding(horizontal = Space.xs, vertical = Space.sm),
             )
+        }
+    }
+}
+
+@Composable
+private fun HeroCard(data: StatsData, dashboard: StatsDashboard, rate30: Float, onClick: () -> Unit) {
+    SoftCard(onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                SectionCaption(
+                    if (dashboard.selectedDate == data.today) "今天 · ${dashboard.selectedDate}"
+                    else "${dashboard.selectedDate}",
+                )
+                Spacer(Modifier.height(Space.xs))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        "${dashboard.dailyFocusSeconds / 60}",
+                        style = MaterialTheme.typography.displayMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        "分钟",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = Space.xs, bottom = 6.dp),
+                    )
+                }
+                Text(
+                    "专注 ${dashboard.dailyFocusCount} 次 · 打卡 ${dashboard.dailyCheckIns} 次",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            ProgressRing(
+                progress = rate30,
+                size = 78.dp,
+                stroke = 7.dp,
+                label = "${(rate30 * 100).toInt()}%",
+                subLabel = "30 天",
+            )
+        }
+        Spacer(Modifier.height(Space.md))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Radii.sm))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                .padding(horizontal = Space.lg, vertical = Space.md),
+        ) {
+            Metric("${data.currentStreak}", "连续天数", Modifier.weight(1f), unit = "天")
+            Metric("${data.totalFocusSeconds / 3600}", "累计专注", Modifier.weight(1f), unit = "小时")
+            Metric("${data.totalPomos}", "番茄总数", Modifier.weight(1f), unit = "个")
         }
     }
 }

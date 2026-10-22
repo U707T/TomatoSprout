@@ -64,8 +64,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.domain.Frequency
 import com.u707t.tomatosprout.domain.TaskStatus
 import com.u707t.tomatosprout.domain.TaskType
+import com.u707t.tomatosprout.ui.components.BackBar
+import com.u707t.tomatosprout.ui.components.FilterPill
 import com.u707t.tomatosprout.ui.components.SectionHeader
+import com.u707t.tomatosprout.ui.components.SegmentedTabs
 import com.u707t.tomatosprout.ui.components.SoftCard
+import com.u707t.tomatosprout.ui.theme.Space
 import com.u707t.tomatosprout.ui.theme.Tomato
 import java.time.Instant
 import java.time.LocalDate
@@ -99,11 +103,9 @@ fun HabitEditScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (state.isNew) "新建" else "编辑") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "返回") }
-                },
+            BackBar(
+                title = if (state.isNew) "新建" else "编辑",
+                onBack = onBack,
                 actions = {
                     if (!state.isNew) {
                         IconButton(onClick = { showDelete = true }) {
@@ -118,7 +120,6 @@ fun HabitEditScreen(
                         Text(if (state.saving) "保存中…" else "保存")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -128,25 +129,17 @@ fun HabitEditScreen(
             return@Scaffold
         }
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(Space.lg),
         ) {
             SoftCard {
                 Text("类型", style = MaterialTheme.typography.labelLarge)
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
-                    listOf(
-                        TaskType.HABIT to "习惯",
-                        TaskType.TODO to "待办",
-                        TaskType.GOAL to "目标",
-                        TaskType.POMODORO to "番茄任务",
-                    ).forEach { (type, label) ->
-                        FilterChip(
-                            selected = state.type == type,
-                            onClick = { viewModel.setType(type) },
-                            label = { Text(label) },
-                            modifier = Modifier.padding(end = 6.dp),
-                        )
-                    }
-                }
+                Spacer(Modifier.height(Space.sm))
+                val types = listOf(TaskType.HABIT, TaskType.TODO, TaskType.GOAL, TaskType.POMODORO)
+                SegmentedTabs(
+                    options = listOf("习惯", "待办", "目标", "番茄"),
+                    selectedIndex = types.indexOf(state.type).coerceAtLeast(0),
+                    onSelect = { viewModel.setType(types[it]) },
+                )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = state.title,
@@ -167,22 +160,12 @@ fun HabitEditScreen(
 
             SectionHeader("计时方式")
             SoftCard {
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
-                    listOf(
-                        "countdown" to "倒计时",
-                        "countup" to "正向计时",
-                        "none" to "不计时",
-                    ).forEach { (mode, label) ->
-                        key(mode) {
-                            FilterChip(
-                                selected = state.timerMode == mode,
-                                onClick = { viewModel.setTimerMode(mode) },
-                                label = { Text(label) },
-                                modifier = Modifier.padding(end = 6.dp),
-                            )
-                        }
-                    }
-                }
+                val modes = listOf("countdown", "countup", "none")
+                SegmentedTabs(
+                    options = listOf("倒计时", "正计时", "不计时"),
+                    selectedIndex = modes.indexOf(state.timerMode).coerceAtLeast(0),
+                    onSelect = { viewModel.setTimerMode(modes[it]) },
+                )
                 Text(
                     if (state.timerMode == "none") {
                         "按次打卡：首页只显示「打卡」，点一次记一次。"
@@ -263,16 +246,14 @@ fun HabitEditScreen(
             SectionHeader("优先级（四象限）")
             SoftCard {
                 val labels = listOf("紧急且重要", "重要不紧急", "紧急不重要", "都不紧急")
-                Column {
-                    Row(Modifier.horizontalScroll(rememberScrollState())) {
-                        labels.forEachIndexed { index, label ->
-                            FilterChip(
-                                selected = state.priority == index,
-                                onClick = { viewModel.setPriority(index) },
-                                label = { Text(label) },
-                                modifier = Modifier.padding(end = 6.dp),
-                            )
-                        }
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    labels.forEachIndexed { index, label ->
+                        FilterPill(
+                            text = label,
+                            selected = state.priority == index,
+                            onClick = { viewModel.setPriority(index) },
+                        )
+                        Spacer(Modifier.width(6.dp))
                     }
                 }
             }
@@ -288,12 +269,12 @@ fun HabitEditScreen(
                                 Frequency.WEEKLY to "每周几",
                                 Frequency.CUSTOM to "自定义间隔",
                             ).forEach { (freq, label) ->
-                                FilterChip(
+                                FilterPill(
+                                    text = label,
                                     selected = state.frequency == freq,
                                     onClick = { viewModel.setFrequency(freq) },
-                                    label = { Text(label) },
-                                    modifier = Modifier.padding(end = 6.dp),
                                 )
+                                Spacer(Modifier.width(6.dp))
                             }
                         }
                         if (state.frequency == Frequency.WEEKLY) {

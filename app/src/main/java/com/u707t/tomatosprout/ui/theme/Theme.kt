@@ -7,7 +7,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
-import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -15,83 +14,86 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.u707t.tomatosprout.domain.ThemeMode
 
-val Tomato = Color(0xFFFF6B6B)
-val TomatoDeep = Color(0xFFE85555)
-val Paper = Color(0xFFF7F7F7)
-val Ink = Color(0xFF2B2424)
-val Sage = Color(0xFF8FAE83)
-val Apricot = Color(0xFFF3B58A)
-val Sand = Color(0xFFE9DFD7)
-
 private val LightColors = lightColorScheme(
-    primary = Tomato,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFFFE4E4),
-    onPrimaryContainer = Color(0xFF5A1D1D),
-    secondary = Sage,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE4EEDF),
-    onSecondaryContainer = Color(0xFF273521),
-    tertiary = Apricot,
-    onTertiary = Color(0xFF4A2A10),
-    background = Paper,
-    onBackground = Ink,
-    surface = Color.White,
-    onSurface = Ink,
-    surfaceVariant = Color(0xFFF1EAE5),
-    onSurfaceVariant = Color(0xFF6B5D56),
-    outline = Color(0xFFDED3CC),
-    outlineVariant = Color(0xFFEDE4DE),
-    error = Color(0xFFB3261E),
-    onError = Color.White,
+    primary = Palette.Tomato,
+    onPrimary = Palette.Card,
+    primaryContainer = Palette.TomatoSoft,
+    onPrimaryContainer = Color(0xFF7A2B1D),
+    secondary = Palette.Sage,
+    onSecondary = Palette.Card,
+    secondaryContainer = Palette.SageSoft,
+    onSecondaryContainer = Color(0xFF2C3A26),
+    tertiary = Palette.Apricot,
+    onTertiary = Color(0xFF3D2509),
+    tertiaryContainer = Palette.ApricotSoft,
+    onTertiaryContainer = Color(0xFF4A2C0C),
+    background = Palette.Paper,
+    onBackground = Palette.Ink,
+    surface = Palette.Card,
+    onSurface = Palette.Ink,
+    surfaceVariant = Palette.PaperDeep,
+    onSurfaceVariant = Palette.InkMuted,
+    surfaceContainerLowest = Palette.Card,
+    surfaceContainerLow = Color(0xFFFDFAF6),
+    surfaceContainer = Palette.Paper,
+    surfaceContainerHigh = Palette.PaperDeep,
+    surfaceContainerHighest = Color(0xFFEDE5DC),
+    outline = Palette.LineStrong,
+    outlineVariant = Palette.Line,
+    error = Palette.Danger,
+    onError = Palette.Card,
+    errorContainer = Palette.DangerSoft,
+    onErrorContainer = Color(0xFF601410),
+    inverseSurface = Palette.Ink,
+    inverseOnSurface = Palette.Paper,
+    inversePrimary = Color(0xFFFFB4A3),
+    scrim = Color(0xFF000000),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFFFF8A8A),
-    onPrimary = Color(0xFF421010),
-    primaryContainer = Color(0xFF5B2020),
-    onPrimaryContainer = Color(0xFFFFDADA),
-    secondary = Color(0xFFA8C69C),
-    onSecondary = Color(0xFF1C2A17),
-    secondaryContainer = Color(0xFF34452D),
-    onSecondaryContainer = Color(0xFFD5E8CC),
-    tertiary = Color(0xFFE0A57B),
-    onTertiary = Color(0xFF3F2410),
-    background = Color(0xFF1B1B1B), // DarkGray
-    onBackground = Color(0xFFD6D6D6), // LightGray
-    surface = Color(0xFF232323),
-    onSurface = Color(0xFFE6E6E6),
-    surfaceVariant = Color(0xFF2F2F2F),
-    onSurfaceVariant = Color(0xFFC8C8C8),
-    outline = Color(0xFF4A4A4A),
-    outlineVariant = Color(0xFF363636),
+    primary = Palette.NightTomato,
+    onPrimary = Color(0xFF3A0F08),
+    primaryContainer = Color(0xFF4A2119),
+    onPrimaryContainer = Color(0xFFFFD9D0),
+    secondary = Color(0xFFA9C79C),
+    onSecondary = Color(0xFF1B2A16),
+    secondaryContainer = Color(0xFF33452C),
+    onSecondaryContainer = Color(0xFFD3E8C7),
+    tertiary = Color(0xFFE9B27A),
+    onTertiary = Color(0xFF3D2509),
+    tertiaryContainer = Color(0xFF543515),
+    onTertiaryContainer = Color(0xFFFFDCBC),
+    background = Palette.NightBg,
+    onBackground = Palette.NightInk,
+    surface = Palette.NightSurface,
+    onSurface = Palette.NightInk,
+    surfaceVariant = Palette.NightCard,
+    onSurfaceVariant = Palette.NightMuted,
+    surfaceContainerLowest = Color(0xFF100D0B),
+    surfaceContainerLow = Palette.NightSurface,
+    surfaceContainer = Palette.NightCard,
+    surfaceContainerHigh = Color(0xFF2A2320),
+    surfaceContainerHighest = Color(0xFF332B26),
+    outline = Palette.NightLine,
+    outlineVariant = Palette.NightLineSoft,
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
-)
-
-private val AppTypography = Typography(
-    displaySmall = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 32.sp, lineHeight = 40.sp),
-    headlineSmall = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 24.sp, lineHeight = 32.sp),
-    titleLarge = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 28.sp),
-    titleMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 24.sp),
-    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
-    labelLarge = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp),
-    labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
+    inverseSurface = Palette.NightInk,
+    inverseOnSurface = Palette.NightBg,
+    inversePrimary = Palette.TomatoDeep,
+    scrim = Color(0xFF000000),
 )
 
 private val AppShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraSmall = RoundedCornerShape(Radii.xs),
+    small = RoundedCornerShape(Radii.sm),
+    medium = RoundedCornerShape(Radii.md),
+    large = RoundedCornerShape(Radii.lg),
+    extraLarge = RoundedCornerShape(Radii.sheet),
 )
 
 @Composable
