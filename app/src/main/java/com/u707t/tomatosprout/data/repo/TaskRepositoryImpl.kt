@@ -54,8 +54,8 @@ class TaskRepositoryImpl @Inject constructor(
     override suspend fun forParent(parentId: String): List<SubTask> = subTasks.forParent(parentId).map { it.toDomain() }
     override suspend fun all(): List<SubTask> = subTasks.all().map { it.toDomain() }
     override suspend fun upsert(subTask: SubTask) = subTasks.upsert(subTask.toEntity())
-    override suspend fun delete(id: String) = subTasks.delete(id)
-    override suspend fun deleteForParent(parentId: String) = subTasks.deleteForParent(parentId)
+    override suspend fun delete(id: String, at: Long) = subTasks.delete(id, at)
+    override suspend fun deleteForParent(parentId: String, at: Long) = subTasks.deleteForParent(parentId, at)
     override suspend fun insertAllIgnore(items: List<SubTask>): MergeReport {
         val rows = subTasks.insertAllIgnore(items.map { it.toEntity() })
         val inserted = rows.count { it >= 0 }

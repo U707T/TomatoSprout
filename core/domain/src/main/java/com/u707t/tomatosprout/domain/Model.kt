@@ -57,6 +57,8 @@ data class SubTask(
     val createdAt: Long = 0L,
     /** v6：跨设备合并用的记录级时间戳。旧数据回填为 createdAt。 */
     val updatedAt: Long = 0L,
+    /** v7：软删除墓碑；null = 未删除。 */
+    val deletedAt: Long? = null,
 )
 
 data class HabitRule(
@@ -124,6 +126,8 @@ data class ReminderRule(
     val timeOfDay: String,
     val weekdaysMask: Int = 0b1111111,
     val enabled: Boolean = true,
+    /** v7：跨设备合并用的记录级时间戳。 */
+    val updatedAt: Long = 0L,
 )
 
 data class Badge(
@@ -141,6 +145,8 @@ data class WishItem(
     val status: String = "pending",
     val createdAt: Long,
     val deletedAt: Long? = null,
+    /** v7：跨设备合并用的记录级时间戳。 */
+    val updatedAt: Long = 0L,
 )
 
 data class AppSettings(

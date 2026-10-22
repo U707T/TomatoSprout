@@ -33,14 +33,28 @@ class WishlistViewModel @Inject constructor(
     fun add(text: String) {
         val content = text.trim()
         if (content.isEmpty()) return
+        val now = System.currentTimeMillis()
         viewModelScope.launch {
-            repo.upsert(WishItem(UUID.randomUUID().toString(), content, "pending", System.currentTimeMillis()))
+            repo.upsert(
+                WishItem(
+                    id = UUID.randomUUID().toString(),
+                    content = content,
+                    status = "pending",
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            )
         }
     }
 
     fun toggle(item: WishItem) {
         viewModelScope.launch {
-            repo.upsert(item.copy(status = if (item.status == "done") "pending" else "done"))
+            repo.upsert(
+                item.copy(
+                    status = if (item.status == "done") "pending" else "done",
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
         }
     }
 

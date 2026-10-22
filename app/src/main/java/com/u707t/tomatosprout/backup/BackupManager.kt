@@ -72,7 +72,7 @@ class BackupManager @Inject constructor(
             json.decodeFromString<SyncSnapshot>(text)
         }.getOrElse { return ImportResult(false, error = "文件不是有效的番茄芽备份：${it.message?.take(80)}") }
 
-        if (snapshot.schemaVersion > 4) return ImportResult(false, error = "备份版本较新，请升级 App 后再导入")
+        if (snapshot.schemaVersion > 5) return ImportResult(false, error = "备份版本较新，请升级 App 后再导入")
         val invalid = validate(snapshot)
         if (invalid != null) return ImportResult(false, error = invalid)
 
@@ -118,11 +118,13 @@ class BackupManager @Inject constructor(
             // 导入的历史专注会改变番茄账本，按记录重算一次
             tasks.recountCompletedPomos()
             val badgeReport = badges.restoreAll(snapshot.badges.map { it.toDomain() })
-            val wishReport = wishes.restoreAll(snapshot.wishes.map { it.toDomain() })
-            val reminderReport = reminders.restoreAll(snapshot.reminders.map { it.toDomain() })
+            val wishReport = wishes.mergeAll(snapshot.wishes.map { it.toDomain() })
+            val reminderReport = reminders.mergeAll(snapshot.reminders.map { it.toDomain() })
             imported += checkReport.inserted + checkReport.updated +
                 focusReport.inserted + focusReport.updated +
-                badgeReport.inserted + wishReport.inserted + reminderReport.inserted
+                badgeReport.inserted +
+                wishReport.inserted + wishReport.updated +
+                reminderReport.inserted + reminderReport.updated
             skipped += checkReport.skipped + focusReport.skipped +
                 badgeReport.skipped + wishReport.skipped + reminderReport.skipped
         }

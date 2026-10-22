@@ -4,6 +4,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class TaskUseCaseTest {
@@ -54,6 +56,23 @@ class TaskUseCaseTest {
         assertEquals(before, orderOf(repo))
     }
 
+    @Test
+    fun `subtask add stamps updatedAt and delete keeps a tombstone`() = runBlocking {
+        val taskRepo = FakeTaskRepository(listOf(task("p1")))
+        val subRepo = FakeSubTaskRepository()
+        val useCase = TaskUseCase(taskRepo, FakeReminderRepository(), subRepo)
+
+        val child = useCase.addSubtask("p1", "子项", at = 5L)
+        assertEquals(5L, child.updatedAt)
+        assertEquals(1, subRepo.forParent("p1").size)
+
+        useCase.deleteSubtask(child)
+        // 行还在（墓碑），只是不再出现在父任务的子任务列表里
+        assertEquals(1, subRepo.items.size)
+        assertNotNull(subRepo.items.single().deletedAt)
+        assertTrue(subRepo.forParent("p1").isEmpty())
+    }
+
     private class FakeTaskRepository(initial: List<Task>) : TaskRepository {
         val items = initial.toMutableList()
 
@@ -102,19 +121,61 @@ class TaskUseCaseTest {
         override suspend fun forTask(taskId: String): ReminderRule? = null
         override suspend fun upsert(rule: ReminderRule) = Unit
         override suspend fun deleteForTask(taskId: String) = Unit
-        override suspend fun restoreAll(items: List<ReminderRule>): MergeReport = MergeReport()
+        override suspend fun mergeAll(items: List<ReminderRule>): MergeReport = MergeReport()
     }
 
     private class FakeSubTaskRepository : SubTaskRepository {
-        override fun observeAll(): Flow<List<SubTask>> = flowOf(emptyList())
-        override fun observeForParent(parentId: String): Flow<List<SubTask>> = flowOf(emptyList())
-        override suspend fun forParent(parentId: String): List<SubTask> = emptyList()
-        override suspend fun all(): List<SubTask> = emptyList()
-        override suspend fun upsert(subTask: SubTask) = Unit
-        override suspend fun delete(id: String) = Unit
-        override suspend fun deleteForParent(parentId: String) = Unit
-        override suspend fun insertAllIgnore(items: List<SubTask>): MergeReport = MergeReport()
-        override suspend fun insertAll(items: List<SubTask>) = Unit
-        override suspend fun mergeAll(items: List<SubTask>): MergeReport = MergeReport()
+        val items = mutableListOf<SubTask>()
+        private fun active() = items.filter { it.deletedAt == null }
+
+        override fun observeAll(): Flow<List<SubTask>> = flowOf(active())
+        override fun observeForParent(parentId: String): Flow<List<SubTask>> =
+            flowOf(active().filter { it.parentTaskId == parentId })
+        override suspend fun forParent(parentId: String): List<SubTask> =
+            active().filter { it.parentTaskId == parentId }
+        override suspend fun all(): List<SubTask> = items.toList()
+        override suspend fun upsert(subTask: SubTask) {
+            items.removeAll { it.id == subTask.id }
+            items += subTask
+        }
+
+        override suspend fun delete(id: String, at: Long) {
+            val index = items.indexOfFirst { it.id == id }
+            if (index >= 0) items[index] = items[index].copy(deletedAt = at, updatedAt = at)
+        }
+
+        override suspend fun deleteForParent(parentId: String, at: Long) {
+            items.replaceAll {
+                if (it.parentTaskId == parentId && it.deletedAt == null) {
+                    it.copy(deletedAt = at, updatedAt = at)
+                } else {
+                    it
+                }
+            }
+        }
+
+        override suspend fun insertAllIgnore(items: List<SubTask>): MergeReport {
+            items.filter { draft -> this.items.none { it.id == draft.id } }.forEach { this.items += it }
+            return MergeReport()
+        }
+
+        override suspend fun insertAll(items: List<SubTask>) {
+            items.forEach { draft ->
+                this.items.removeAll { it.id == draft.id }
+                this.items += draft
+            }
+        }
+
+        override suspend fun mergeAll(items: List<SubTask>): MergeReport {
+            items.forEach { remote ->
+                val index = this.items.indexOfFirst { it.id == remote.id }
+                if (index < 0) {
+                    this.items += remote
+                } else if (remote.updatedAt > this.items[index].updatedAt) {
+                    this.items[index] = remote
+                }
+            }
+            return MergeReport()
+        }
     }
 }

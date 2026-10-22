@@ -62,9 +62,9 @@ fun Task.toEntity() = TaskEntity(
     focusMinutes = focusMinutes,
 )
 
-fun SubTaskEntity.toDomain() = SubTask(id, parentTaskId, title, done, sortOrder, createdAt, updatedAt)
+fun SubTaskEntity.toDomain() = SubTask(id, parentTaskId, title, done, sortOrder, createdAt, updatedAt, deletedAt)
 
-fun SubTask.toEntity() = SubTaskEntity(id, parentTaskId, title, done, sortOrder, createdAt, updatedAt)
+fun SubTask.toEntity() = SubTaskEntity(id, parentTaskId, title, done, sortOrder, createdAt, updatedAt, deletedAt)
 
 fun HabitRuleEntity.toDomain() = HabitRule(
     taskId = taskId,
@@ -168,14 +168,14 @@ fun FocusSession.toEntity() = FocusSessionEntity(
     updatedAt = updatedAt,
 )
 
-fun ReminderRuleEntity.toDomain() = ReminderRule(id, taskId, timeOfDay, weekdaysMask, enabled)
+fun ReminderRuleEntity.toDomain() = ReminderRule(id, taskId, timeOfDay, weekdaysMask, enabled, updatedAt)
 
-fun ReminderRule.toEntity() = ReminderRuleEntity(id, taskId, timeOfDay, weekdaysMask, enabled)
+fun ReminderRule.toEntity() = ReminderRuleEntity(id, taskId, timeOfDay, weekdaysMask, enabled, updatedAt)
 
 fun BadgeEntity.toDomain() = Badge(id, badgeKey, name, conditionJson, unlockedAt, description)
 
 fun Badge.toEntity() = BadgeEntity(id, key, name, conditionJson, unlockedAt, description)
 
-fun WishItemEntity.toDomain() = WishItem(id, content, status, createdAt, deletedAt)
+fun WishItemEntity.toDomain() = WishItem(id, content, status, createdAt, deletedAt, updatedAt)
 
-fun WishItem.toEntity() = WishItemEntity(id, content, status, createdAt, deletedAt)
+fun WishItem.toEntity() = WishItemEntity(id, content, status, createdAt, deletedAt, updatedAt)

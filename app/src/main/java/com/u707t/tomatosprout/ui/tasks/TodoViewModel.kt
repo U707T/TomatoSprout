@@ -15,11 +15,13 @@ import com.u707t.tomatosprout.domain.attributedLocalDate
 import com.u707t.tomatosprout.notify.ReminderScheduler
 import com.u707t.tomatosprout.ui.focus.FocusEventBus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -151,7 +153,8 @@ class TodoViewModel @Inject constructor(
                 )
             },
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodoUiState())
+    }.flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodoUiState())
 
     fun refresh() {
         refreshTick.update { it + 1 }

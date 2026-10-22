@@ -50,7 +50,7 @@ class TaskUseCase @Inject constructor(
     }
 
     suspend fun deleteSubtask(subTask: SubTask) {
-        subTasks.delete(subTask.id)
+        subTasks.delete(subTask.id, System.currentTimeMillis())
         refreshParent(subTask.parentTaskId)
     }
 
@@ -78,7 +78,11 @@ class TaskUseCase @Inject constructor(
         tasks.upsert(task)
         if (habitRule != null) tasks.upsertHabitRule(habitRule) else tasks.deleteHabitRule(task.id)
         if (goalRule != null) tasks.upsertGoalRule(goalRule) else tasks.deleteGoalRule(task.id)
-        if (reminder != null) reminders.upsert(reminder) else reminders.deleteForTask(task.id)
+        if (reminder != null) {
+            reminders.upsert(reminder.copy(updatedAt = System.currentTimeMillis()))
+        } else {
+            reminders.deleteForTask(task.id)
+        }
         if (task.parentId != null) refreshParent(task.parentId)
     }
 
@@ -103,7 +107,7 @@ class TaskUseCase @Inject constructor(
         reminders.deleteForTask(task.id)
         tasks.deleteHabitRule(task.id)
         tasks.deleteGoalRule(task.id)
-        subTasks.deleteForParent(task.id)
+        subTasks.deleteForParent(task.id, at)
         task.parentId?.let { refreshParent(it) }
     }
 

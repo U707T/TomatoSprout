@@ -16,12 +16,12 @@ interface SubTaskRepository {
     suspend fun forParent(parentId: String): List<SubTask>
     suspend fun all(): List<SubTask>
     suspend fun upsert(subTask: SubTask)
-    suspend fun delete(id: String)
-    suspend fun deleteForParent(parentId: String)
+    suspend fun delete(id: String, at: Long)
+    suspend fun deleteForParent(parentId: String, at: Long)
     suspend fun insertAllIgnore(items: List<SubTask>): MergeReport
     suspend fun insertAll(items: List<SubTask>)
 
-    /** 记录级合并：远端 updatedAt 更新才覆盖本地标题 / 完成状态 / 排序。 */
+    /** 记录级合并：远端 updatedAt 更新才覆盖本地标题 / 完成状态 / 排序 / 删除。 */
     suspend fun mergeAll(items: List<SubTask>): MergeReport
 }
 
@@ -100,7 +100,9 @@ interface ReminderRepository {
     suspend fun forTask(taskId: String): ReminderRule?
     suspend fun upsert(rule: ReminderRule)
     suspend fun deleteForTask(taskId: String)
-    suspend fun restoreAll(items: List<ReminderRule>): MergeReport
+
+    /** 记录级合并；任务唯一键相同但 id 不同时保留本地 id。 */
+    suspend fun mergeAll(items: List<ReminderRule>): MergeReport
 }
 
 interface WishRepository {
@@ -108,7 +110,9 @@ interface WishRepository {
     suspend fun all(): List<WishItem>
     suspend fun upsert(item: WishItem)
     suspend fun softDelete(id: String, at: Long)
-    suspend fun restoreAll(items: List<WishItem>): MergeReport
+
+    /** 记录级合并：远端 updatedAt 更新才覆盖本地。 */
+    suspend fun mergeAll(items: List<WishItem>): MergeReport
 }
 
 interface SettingsRepository {

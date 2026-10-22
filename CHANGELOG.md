@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.8.2 — 提醒 / 愿望双向合并与子任务墓碑
+
+- **提醒规则双向合并**：`reminder_rules` 增加 `updatedAt`（DB v7），按 id 与 taskId 双键合并；同任务不同 id 时保留本地 id，避免撞唯一索引
+- **愿望清单双向合并**：`wish_items` 增加 `updatedAt`，完成状态 / 删除墓碑按较新者传播
+- **子任务软删除**：`subtasks` 增加 `deletedAt`，删除变成墓碑并跨设备生效；UI 查询统一过滤墓碑，同步 / 备份仍包含
+- **首页计算移出主线程**：`TodoViewModel` 的卡片聚合改到 `Dispatchers.Default`，任务量大时不再卡主线程
+- **快照 v5**：`schemaVersion` 升到 5；v2 / v3 / v4 备份仍可导入，旧版 App 会提示「版本过新」
+- **测试**：新增子任务墓碑用例，domain 49 个；迁移 SQL 用 SQLite 对 schema 7 逐列验证
+
 ## v1.8.1 — 同步事务化与子任务双向合并
 
 - **同步 / 导入事务化**：每个远端文件的合并 + manifest 写入在同一个 Room 事务里；备份导入整体一个事务。中途异常整体回滚，不再留下「任务合并了、规则没合并」的半状态

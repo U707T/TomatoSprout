@@ -68,15 +68,16 @@ interface TaskDao {
 
 @Dao
 interface SubTaskDao {
-    @Query("SELECT * FROM subtasks WHERE parentTaskId = :parentId ORDER BY sortOrder ASC, createdAt ASC")
+    @Query("SELECT * FROM subtasks WHERE parentTaskId = :parentId AND deletedAt IS NULL ORDER BY sortOrder ASC, createdAt ASC")
     fun observeForParent(parentId: String): Flow<List<SubTaskEntity>>
 
-    @Query("SELECT * FROM subtasks WHERE parentTaskId = :parentId ORDER BY sortOrder ASC, createdAt ASC")
+    @Query("SELECT * FROM subtasks WHERE parentTaskId = :parentId AND deletedAt IS NULL ORDER BY sortOrder ASC, createdAt ASC")
     suspend fun forParent(parentId: String): List<SubTaskEntity>
 
-    @Query("SELECT * FROM subtasks ORDER BY parentTaskId ASC, sortOrder ASC, createdAt ASC")
+    @Query("SELECT * FROM subtasks WHERE deletedAt IS NULL ORDER BY parentTaskId ASC, sortOrder ASC, createdAt ASC")
     fun observeAll(): Flow<List<SubTaskEntity>>
 
+    /** 同步 / 备份用：包含软删除墓碑。 */
     @Query("SELECT * FROM subtasks ORDER BY parentTaskId ASC, sortOrder ASC, createdAt ASC")
     suspend fun all(): List<SubTaskEntity>
 
@@ -92,11 +93,11 @@ interface SubTaskDao {
     @Upsert
     suspend fun upsertAll(entities: List<SubTaskEntity>)
 
-    @Query("DELETE FROM subtasks WHERE id = :id")
-    suspend fun delete(id: String)
+    @Query("UPDATE subtasks SET deletedAt = :at, updatedAt = MAX(updatedAt, :at) WHERE id = :id")
+    suspend fun delete(id: String, at: Long)
 
-    @Query("DELETE FROM subtasks WHERE parentTaskId = :parentId")
-    suspend fun deleteForParent(parentId: String)
+    @Query("UPDATE subtasks SET deletedAt = :at, updatedAt = MAX(updatedAt, :at) WHERE parentTaskId = :parentId AND deletedAt IS NULL")
+    suspend fun deleteForParent(parentId: String, at: Long)
 
     @Query("DELETE FROM subtasks")
     suspend fun deleteAll()
@@ -279,6 +280,9 @@ interface ReminderDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAllIgnore(entities: List<ReminderRuleEntity>): List<Long>
+
+    @Upsert
+    suspend fun upsertAll(entities: List<ReminderRuleEntity>)
 }
 
 @Dao
@@ -292,14 +296,17 @@ interface WishDao {
     @Upsert
     suspend fun upsert(entity: WishItemEntity)
 
-    @Query("UPDATE wish_items SET deletedAt = :at WHERE id = :id")
+    @Query("UPDATE wish_items SET deletedAt = :at, updatedAt = MAX(updatedAt, :at) WHERE id = :id")
     suspend fun softDelete(id: String, at: Long)
 
-    @Query("UPDATE wish_items SET deletedAt = :at WHERE deletedAt IS NULL")
+    @Query("UPDATE wish_items SET deletedAt = :at, updatedAt = MAX(updatedAt, :at) WHERE deletedAt IS NULL")
     suspend fun softDeleteAll(at: Long)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAllIgnore(entities: List<WishItemEntity>): List<Long>
+
+    @Upsert
+    suspend fun upsertAll(entities: List<WishItemEntity>)
 }
 
 @Dao

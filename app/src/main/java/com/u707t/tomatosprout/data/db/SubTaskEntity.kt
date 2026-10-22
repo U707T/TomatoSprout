@@ -29,4 +29,6 @@ data class SubTaskEntity(
     val createdAt: Long = 0L,
     /** v6：记录级合并时间戳。旧数据回填为 createdAt。 */
     @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
+    /** v7：软删除墓碑；null = 未删除。 */
+    val deletedAt: Long? = null,
 )

@@ -125,6 +125,8 @@ data class ReminderRuleEntity(
     val timeOfDay: String = "20:00",
     val weekdaysMask: Int = 0b1111111,
     val enabled: Boolean = true,
+    /** v7：记录级合并时间戳。 */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
 )
 
 @Serializable
@@ -146,6 +148,8 @@ data class WishItemEntity(
     val status: String = "pending",
     val createdAt: Long = 0L,
     val deletedAt: Long? = null,
+    /** v7：记录级合并时间戳。 */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
 )
 
 @Serializable
