@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.9.4 — 专注声音无缝循环与电平修复
+
+- **白 / 棕噪音无缝化**：原始 8 秒素材开头 0.46s 淡入、结尾 0.5s 淡出，`isLooping = true` 时每 8 秒音量塌陷一次；裁掉头尾后做 0.25s 等功率交叉淡化，循环接点波形连续
+- **树叶风声**：原素材电平约 -52 dBFS，基本听不见；重制为可听电平并做 0.5s 交叉循环，改为 OGG（54KB）
+- **不改播放代码**：文件名 / `R.raw` 资源名不变，`FocusAudioPlayer` 无需修改；补注释说明循环素材不能带淡入淡出
+- **验证**：白 6.85s / 棕 6.95s / 风 8.50s；50ms RMS 稳定，接点相邻样本差小于噪音本身 p99，无爆音；`:core:domain:test` 51、`:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:lintDebug`
+
 ## v1.9.3 — 触感、音效与动效
 
 - **触感反馈**：不再依赖 `View.performHapticFeedback(CLOCK_TICK)`（很多 ROM 静默），改用 `Vibrator` 直驱；点击 / 完成 / 删除三种强度；新增 `VIBRATE` 普通权限

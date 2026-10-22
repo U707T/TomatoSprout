@@ -7,6 +7,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * 循环素材必须本身无缝：raw 里的白噪音 / 棕色噪音 / 树叶风声已裁掉头尾淡变并做等功率交叉淡化。
+ * 如果换成带淡入淡出的素材，isLooping = true 会每隔几秒把音量拉到 0，听感是「一阵一阵」。
+ */
 enum class FocusAudioOption(val label: String, val resId: Int?) {
     NONE("无音乐", null),
     WHITE_NOISE("白噪音", R.raw.white_noise),
