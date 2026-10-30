@@ -61,6 +61,7 @@ class SettingsRepositoryImpl @Inject constructor(
         themeMode = runCatching { ThemeMode.valueOf(this[K_THEME] ?: ThemeMode.SYSTEM.name) }.getOrDefault(ThemeMode.SYSTEM),
         accent = this[K_ACCENT] ?: "tomato",
         taskSort = this[K_TASK_SORT] ?: "manual",
+        hideDone = this[K_HIDE_DONE] ?: false,
         simpleMode = this[K_SIMPLE] ?: false,
         notificationsEnabled = this[K_NOTIFICATIONS] ?: true,
         liveActivityEnabled = this[K_LIVE_ACTIVITY] ?: true,
@@ -87,6 +88,7 @@ class SettingsRepositoryImpl @Inject constructor(
         this[K_THEME] = s.themeMode.name
         this[K_ACCENT] = s.accent
         this[K_TASK_SORT] = s.taskSort
+        this[K_HIDE_DONE] = s.hideDone
         this[K_SIMPLE] = s.simpleMode
         this[K_NOTIFICATIONS] = s.notificationsEnabled
         this[K_LIVE_ACTIVITY] = s.liveActivityEnabled
@@ -113,6 +115,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val K_THEME = stringPreferencesKey("theme")
         val K_ACCENT = stringPreferencesKey("accent")
         val K_TASK_SORT = stringPreferencesKey("task_sort")
+        val K_HIDE_DONE = booleanPreferencesKey("hide_done")
         val K_SIMPLE = booleanPreferencesKey("simple_mode")
         val K_NOTIFICATIONS = booleanPreferencesKey("notifications")
         val K_LIVE_ACTIVITY = booleanPreferencesKey("live_activity")

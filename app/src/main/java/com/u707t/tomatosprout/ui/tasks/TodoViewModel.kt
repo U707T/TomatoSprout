@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -58,6 +59,18 @@ class TodoViewModel @Inject constructor(
     fun setSort(mode: TaskSort) {
         viewModelScope.launch {
             settingsRepo.update { if (it.taskSort == mode.key) it else it.copy(taskSort = mode.key) }
+        }
+    }
+
+    /** 已完成的任务默认留在列表底部；打开后只看还没做完的。 */
+    val hideDone: StateFlow<Boolean> = settingsRepo.settings
+        .map { it.hideDone }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setHideDone(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepo.update { if (it.hideDone == enabled) it else it.copy(hideDone = enabled) }
         }
     }
 
@@ -172,6 +185,7 @@ class TodoViewModel @Inject constructor(
             },
         )
     }.flowOn(Dispatchers.Default)
+        .catch { emit(TodoUiState(loading = false, error = it.message ?: "任务列表加载失败")) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodoUiState())
 
     fun refresh() {
@@ -208,6 +222,16 @@ class TodoViewModel @Inject constructor(
 
     fun markDone(task: Task, done: Boolean) {
         viewModelScope.launch { useCase.setDone(task, done, System.currentTimeMillis()) }
+    }
+
+    /** 精确撤销今天的打卡（不走 toggle），供首页撤销条使用。 */
+    fun undoCheckIn(task: Task) {
+        viewModelScope.launch {
+            when (val result = checkInUseCase.undoToday(task)) {
+                is CheckInResult.Rejected -> messages.emit(result.reason)
+                else -> Unit
+            }
+        }
     }
 
     fun cycleColor(task: Task) {

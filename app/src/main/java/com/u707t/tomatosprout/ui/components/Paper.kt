@@ -38,9 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -536,13 +534,3 @@ fun IllustrationEmptyState(
         }
     }
 }
-
-/** Snackbar + 撤销：返回 true 表示用户点了撤销。 */
-suspend fun SnackbarHostState.showUndo(message: String, actionLabel: String = "撤销"): Boolean =
-    showSnackbar(
-        message = message,
-        actionLabel = actionLabel,
-        withDismissAction = false,
-        // 撤销窗口给足 10 秒：4 秒在「刚删完还没反应过来」时基本来不及点
-        duration = SnackbarDuration.Long,
-    ) == SnackbarResult.ActionPerformed

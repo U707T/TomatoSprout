@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,7 +65,7 @@ fun SyncLogsScreen(onBack: () -> Unit, viewModel: WebDavViewModel = hiltViewMode
     ) { padding ->
         if (logs.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
-                EmptyState("🗂", "还没有同步记录", "配置服务器并手动同步后，这里会显示时间、方向、条目数与冲突数。")
+                EmptyState(Icons.AutoMirrored.Filled.List, "还没有同步记录", "配置服务器并手动同步后，这里会显示时间、方向、条目数与冲突数。")
             }
         } else {
             LazyColumn(

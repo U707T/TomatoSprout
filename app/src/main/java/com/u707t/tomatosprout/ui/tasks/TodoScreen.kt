@@ -4,6 +4,8 @@ import android.app.TimePickerDialog
 import android.content.Context
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -34,6 +36,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
@@ -41,7 +44,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -70,11 +76,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,6 +99,7 @@ import com.u707t.tomatosprout.domain.TaskStatus
 import com.u707t.tomatosprout.domain.TaskType
 import com.u707t.tomatosprout.ui.components.ConfirmDialog
 import com.u707t.tomatosprout.ui.components.AppBottomSheet
+import com.u707t.tomatosprout.ui.components.EmptyState
 import com.u707t.tomatosprout.ui.components.FilterPill
 import com.u707t.tomatosprout.ui.components.IllustrationEmptyState
 import com.u707t.tomatosprout.ui.components.LargeHeader
@@ -96,25 +108,17 @@ import com.u707t.tomatosprout.ui.components.ProgressRing
 import com.u707t.tomatosprout.ui.components.ThinProgress
 import com.u707t.tomatosprout.ui.components.greetingFor
 import com.u707t.tomatosprout.ui.feedback.LocalFeedback
-import com.u707t.tomatosprout.ui.components.showUndo
 import com.u707t.tomatosprout.ui.theme.Motion
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Sizes
 import com.u707t.tomatosprout.ui.theme.Space
+import com.u707t.tomatosprout.ui.theme.readableContentColor
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-
-private enum class TaskFilter(val label: String) {
-    ALL("全部"),
-    HABIT("习惯"),
-    TODO("待办"),
-    GOAL("目标"),
-    POMODORO("番茄"),
-}
 
 private val weekdayNames = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 private val reminderPresets = listOf("08:00", "12:00", "18:00", "20:00", "22:00")
@@ -123,18 +127,21 @@ private val reminderPresets = listOf("08:00", "12:00", "18:00", "20:00", "22:00"
 @Composable
 fun TodoScreen(
     onStartTask: (Task) -> Unit,
+    onStartFreeFocus: () -> Unit,
     onEditTask: (String) -> Unit,
     onAdvancedAdd: (QuickAddUiState) -> Unit,
     onOpenHistory: (taskId: String?) -> Unit,
     onOpenStats: (taskId: String?) -> Unit,
     simpleMode: Boolean = false,
     onSimpleModeChange: (Boolean) -> Unit = {},
+    focusMinutes: Int = 25,
     viewModel: TodoViewModel = hiltViewModel(),
     quickAddViewModel: QuickAddViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val addState by quickAddViewModel.state.collectAsStateWithLifecycle()
     val sort by viewModel.sort.collectAsStateWithLifecycle()
+    val hideDone by viewModel.hideDone.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val feedback = LocalFeedback.current
@@ -149,11 +156,14 @@ fun TodoScreen(
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var filterIndex by rememberSaveable { mutableIntStateOf(0) }
     var showSort by remember { mutableStateOf(false) }
-    var pendingDelete by remember { mutableStateOf<Task?>(null) }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
     var pendingUncheck by remember { mutableStateOf<Task?>(null) }
-    // 滑动删除的「撤销窗口」：期间先把卡片藏起来，等提示条结束再真正写库
-    var pendingUndo by remember { mutableStateOf<Task?>(null) }
-    var deleteJob by remember { mutableStateOf<Job?>(null) }
+    // 撤销条同一时间只留一条：新的进来先把上一条结算掉（删除落地），避免两条删除互相覆盖
+    var undoBar by remember { mutableStateOf<UndoBarState?>(null) }
+    var undoJob by remember { mutableStateOf<Job?>(null) }
+    // 撤销窗口内先把卡片藏起来，等窗口结束再真正写库
+    var hiddenTaskId by remember { mutableStateOf<String?>(null) }
     var reminderTask by remember { mutableStateOf<Task?>(null) }
     var reminderTime by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
@@ -176,15 +186,15 @@ fun TodoScreen(
     val today = ui.today
     val cards = ui.cards
     val filter = TaskFilter.entries[filterIndex.coerceIn(0, TaskFilter.entries.lastIndex)]
-    val visible = remember(cards, filter, sort, pendingUndo?.id) {
-        val filtered = when (filter) {
-            TaskFilter.ALL -> cards
-            TaskFilter.HABIT -> cards.filter { it.task.type == TaskType.HABIT }
-            TaskFilter.TODO -> cards.filter { it.task.type == TaskType.TODO }
-            TaskFilter.GOAL -> cards.filter { it.task.type == TaskType.GOAL }
-            TaskFilter.POMODORO -> cards.filter { it.task.type == TaskType.POMODORO }
-        }
-        sortCards(filtered, sort).filterNot { it.task.id == pendingUndo?.id }
+    val visible = remember(cards, filter, sort, hideDone, hiddenTaskId, query) {
+        val keyword = query.trim()
+        sortCards(filterCards(cards, filter, hideDone), sort)
+            .filterNot { it.task.id == hiddenTaskId }
+            .filter { card ->
+                keyword.isEmpty() ||
+                    card.task.title.contains(keyword, ignoreCase = true) ||
+                    card.task.note?.contains(keyword, ignoreCase = true) == true
+            }
     }
 
     val doneCount = cards.count { it.isDone || it.checkedToday }
@@ -205,19 +215,49 @@ fun TodoScreen(
         showAdd = true
     }
 
+    /**
+     * 撤销条：同一时间只留一条，新的进来先把上一条结算掉（删除落地）。
+     * 用独立组件而不是 Snackbar，避免「结算消息」把撤销窗口顶掉。
+     */
+    fun pushUndo(bar: UndoBarState) {
+        undoJob?.cancel()
+        undoBar?.let { previous -> previous.onExpire() }
+        undoBar = bar
+        undoJob = scope.launch {
+            delay(UNDO_WINDOW_MS)
+            if (undoBar === bar) {
+                bar.onExpire()
+                undoBar = null
+            }
+        }
+    }
+
+    fun performUndo() {
+        val bar = undoBar ?: return
+        undoJob?.cancel()
+        undoBar = null
+        bar.onAction()
+    }
+
     fun handleCheck(card: TodoCardUi) {
         if (card.checkedToday) {
             if (card.todayCheckInCount > 1) {
                 pendingUncheck = card.task
             } else {
                 feedback?.tap()
-                viewModel.toggleCheckIn(card.task)
-                scope.launch {
-                    // 这里撤销的是「撤销动作」本身，按钮文案说「恢复」才不会被误解成再撤销一次
-                    if (snackbar.showUndo("已撤销「${card.task.title}」的打卡", actionLabel = "恢复")) {
-                        viewModel.toggleCheckIn(card.task)
-                    }
-                }
+                // 精确撤销，不 toggle：撤销后 10 秒内又打了卡也不会互相打架
+                viewModel.undoCheckIn(card.task)
+                pushUndo(
+                    UndoBarState(
+                        message = "已撤销「${card.task.title}」的打卡",
+                        actionLabel = "恢复",
+                        onAction = {
+                            feedback?.confirm()
+                            viewModel.toggleCheckIn(card.task)
+                        },
+                        onExpire = {},
+                    ),
+                )
             }
             return
         }
@@ -240,23 +280,26 @@ fun TodoScreen(
     }
 
     /**
-     * 滑动删除：先隐藏 + 给 10 秒撤销窗口，提示条结束才真正写库。
-     * 这样「删错了」不需要从墓碑里恢复，也不会出现删了又弹一条「已删除」的双重提示。
+     * 删除：先隐藏 + 10 秒撤销窗口，窗口结束才真正写库。
+     * 长按菜单与左滑共用这一条路径，首页不再有「确认框 / 撤销条」两套模型。
      */
     fun deleteWithUndo(task: Task) {
         feedback?.reject()
-        pendingUndo?.takeIf { it.id != task.id }?.let { viewModel.delete(it, announce = false) }
-        deleteJob?.cancel()
-        pendingUndo = task
-        deleteJob = scope.launch {
-            val undone = snackbar.showUndo("已删除「${task.title}」", actionLabel = "撤销")
-            if (undone) {
-                feedback?.tap()
-            } else {
-                viewModel.delete(task, announce = false)
-            }
-            if (pendingUndo?.id == task.id) pendingUndo = null
-        }
+        pushUndo(
+            UndoBarState(
+                message = "已删除「${task.title}」",
+                actionLabel = "撤销",
+                onAction = {
+                    feedback?.tap()
+                    hiddenTaskId = null
+                },
+                onExpire = {
+                    viewModel.delete(task, announce = false)
+                    hiddenTaskId = null
+                },
+            ),
+        )
+        hiddenTaskId = task.id
     }
 
     Scaffold(
@@ -270,6 +313,17 @@ fun TodoScreen(
                     else -> "还有 ${cards.size - doneCount} 件没完成，专注 $totalFocusMinutes 分钟"
                 },
                 trailing = {
+                    IconButton(onClick = {
+                        feedback?.tap()
+                        searchOpen = !searchOpen
+                        if (!searchOpen) query = ""
+                    }) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = if (searchOpen) "关闭搜索" else "搜索任务",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     IconButton(onClick = {
                         feedback?.tap()
                         showSort = true
@@ -293,7 +347,17 @@ fun TodoScreen(
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = Space.lg),
+                verticalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                undoBar?.let { bar ->
+                    UndoBar(bar = bar, onAction = { performUndo() })
+                }
+                SnackbarHost(snackbar)
+            }
+        },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
@@ -328,10 +392,16 @@ fun TodoScreen(
             ) { CircularProgressIndicator(color = MaterialTheme.colorScheme.primary) }
 
             ui.error != null -> Box(
-                Modifier.fillMaxSize().padding(padding).padding(Space.xxl),
+                Modifier.fillMaxSize().padding(padding),
                 Alignment.Center,
             ) {
-                Text(ui.error.orEmpty(), color = MaterialTheme.colorScheme.error)
+                EmptyState(
+                    icon = Icons.Default.Refresh,
+                    title = "任务列表没加载出来",
+                    message = ui.error.orEmpty(),
+                    actionLabel = "重试",
+                    onAction = { viewModel.refresh() },
+                )
             }
 
             cards.isEmpty() -> Box(
@@ -352,6 +422,18 @@ fun TodoScreen(
                 contentPadding = PaddingValues(start = Space.lg, end = Space.lg, bottom = 140.dp),
                 verticalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
+                if (searchOpen) {
+                    item(key = "search") {
+                        SearchField(
+                            query = query,
+                            onQueryChange = { query = it },
+                            onClose = {
+                                searchOpen = false
+                                query = ""
+                            },
+                        )
+                    }
+                }
                 item(key = "overview") {
                     OverviewCard(
                         pomos = totalPomos,
@@ -359,7 +441,12 @@ fun TodoScreen(
                         done = doneCount,
                         total = cards.size,
                         completion = completion,
+                        focusMinutes = focusMinutes,
                         onOpenStats = { onOpenStats(null) },
+                        onStartFocus = {
+                            feedback?.tap()
+                            onStartFreeFocus()
+                        },
                     )
                 }
                 item(key = "filters") {
@@ -386,11 +473,32 @@ fun TodoScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(
-                                "这个分类下还没有任务",
+                                when {
+                                    query.isNotBlank() -> "没有找到匹配的任务"
+                                    hideDone && cards.any { it.isDone } -> "已完成的任务先收起来了"
+                                    else -> "这个分类下还没有任务"
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            if (filter != TaskFilter.ALL) {
+                            if (query.isNotBlank()) {
+                                Spacer(Modifier.height(Space.md))
+                                Surface(
+                                    onClick = {
+                                        feedback?.tap()
+                                        query = ""
+                                    },
+                                    shape = RoundedCornerShape(Radii.sm),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                ) {
+                                    Text(
+                                        "清除搜索",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.sm),
+                                    )
+                                }
+                            } else if (filter != TaskFilter.ALL) {
                                 Spacer(Modifier.height(Space.md))
                                 Surface(
                                     onClick = {
@@ -407,6 +515,23 @@ fun TodoScreen(
                                         modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.sm),
                                     )
                                 }
+                            } else if (hideDone) {
+                                Spacer(Modifier.height(Space.md))
+                                Surface(
+                                    onClick = {
+                                        feedback?.tap()
+                                        viewModel.setHideDone(false)
+                                    },
+                                    shape = RoundedCornerShape(Radii.sm),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                ) {
+                                    Text(
+                                        "显示已完成",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.sm),
+                                    )
+                                }
                             }
                         }
                     }
@@ -415,6 +540,7 @@ fun TodoScreen(
                         SwipeableTaskCard(
                             card = card,
                             simple = simpleMode,
+                            today = today,
                             modifier = Modifier.animateItem(),
                             onOpen = { onEditTask(card.task.id) },
                             onLongPress = { viewModel.showQuickActions(card.task.id) },
@@ -501,6 +627,26 @@ fun TodoScreen(
                     onCheckedChange = {
                         feedback?.tap()
                         onSimpleModeChange(it)
+                    },
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = Space.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(end = Space.md)) {
+                    Text("隐藏已完成", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "已完成的任务不再占首页位置，随时可以关掉",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = hideDone,
+                    onCheckedChange = {
+                        feedback?.tap()
+                        viewModel.setHideDone(it)
                     },
                 )
             }
@@ -650,7 +796,8 @@ fun TodoScreen(
             onMoveDown = { viewModel.move(quick.taskId, 1) },
             onDelete = {
                 viewModel.dismissQuickActions()
-                pendingDelete = ui.cards.firstOrNull { it.task.id == quick.taskId }?.task
+                // 和左滑共用同一条「延迟删除 + 撤销条」路径，首页不再弹确认框
+                ui.cards.firstOrNull { it.task.id == quick.taskId }?.task?.let { deleteWithUndo(it) }
             },
             onHistory = {
                 viewModel.dismissQuickActions()
@@ -660,20 +807,6 @@ fun TodoScreen(
                 viewModel.dismissQuickActions()
                 onOpenStats(quick.taskId)
             },
-        )
-    }
-
-    pendingDelete?.let { task ->
-        ConfirmDialog(
-            title = "删除「${task.title}」？",
-            message = "任务会从首页移除，打卡与专注历史会保留。提醒和习惯排期会一并删除。",
-            confirmLabel = "删除",
-            destructive = true,
-            onConfirm = {
-                pendingDelete = null
-                viewModel.delete(task)
-            },
-            onDismiss = { pendingDelete = null },
         )
     }
 
@@ -700,7 +833,9 @@ private fun OverviewCard(
     done: Int,
     total: Int,
     completion: Float,
+    focusMinutes: Int,
     onOpenStats: () -> Unit,
+    onStartFocus: () -> Unit,
 ) {
     Surface(
         onClick = onOpenStats,
@@ -709,320 +844,52 @@ private fun OverviewCard(
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.fillMaxWidth().padding(top = Space.xs),
     ) {
-        Row(
-            Modifier.padding(horizontal = Space.lg, vertical = Space.lg),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Metric(pomos.toString(), "今日番茄", Modifier.weight(1f))
-            Metric(minutes.toString(), "专注时长", Modifier.weight(1f), unit = "分")
-            Metric("$done/$total", "完成", Modifier.weight(1f))
-            ProgressRing(
-                progress = completion,
-                size = 44.dp,
-                stroke = 4.dp,
-                label = null,
-            )
-        }
-    }
-}
-
-/**
- * 滑动外壳：右滑打卡 / 完成，左滑删除。
- *
- * `confirmValueChange` 一律返回 false —— 动作已经在回调里触发，卡片自己弹回原位，
- * 不会留下「滑走一半卡住」或需要手动 reset 的状态。
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SwipeableTaskCard(
-    card: TodoCardUi,
-    simple: Boolean,
-    onOpen: () -> Unit,
-    onLongPress: () -> Unit,
-    onAction: () -> Unit,
-    onSwipeCheck: () -> Unit,
-    onSwipeDelete: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // 计时任务右滑不启动专注：起计时必须是一次明确的点击
-    val checkEnabled = card.isCountBased || card.isDone
-    val state = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> if (checkEnabled) onSwipeCheck()
-                SwipeToDismissBoxValue.EndToStart -> onSwipeDelete()
-                SwipeToDismissBoxValue.Settled -> Unit
+        Column {
+            Row(
+                Modifier.padding(horizontal = Space.lg, vertical = Space.lg),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Metric(pomos.toString(), "今日番茄", Modifier.weight(1f))
+                Metric(minutes.toString(), "专注时长", Modifier.weight(1f), unit = "分")
+                Metric("$done/$total", "完成", Modifier.weight(1f))
+                ProgressRing(
+                    progress = completion,
+                    size = 44.dp,
+                    stroke = 4.dp,
+                    label = null,
+                )
             }
-            false
-        },
-        positionalThreshold = { distance -> distance * 0.32f },
-    )
-    SwipeToDismissBox(
-        state = state,
-        modifier = modifier,
-        enableDismissFromStartToEnd = checkEnabled,
-        enableDismissFromEndToStart = true,
-        backgroundContent = {
-            SwipeActionBackground(card = card, direction = state.dismissDirection)
-        },
-    ) {
-        TaskCard(
-            card = card,
-            simple = simple,
-            onOpen = onOpen,
-            onLongPress = onLongPress,
-            onAction = onAction,
-        )
-    }
-}
-
-/** 滑动时露出的底层：左打卡、右删除，颜色只用容器色，不抢卡片本身的注意力。 */
-@Composable
-private fun SwipeActionBackground(card: TodoCardUi, direction: SwipeToDismissBoxValue) {
-    val checkAlpha by animateFloatAsState(
-        targetValue = if (direction == SwipeToDismissBoxValue.StartToEnd) 1f else 0f,
-        animationSpec = tween(Motion.fast),
-        label = "swipeCheck",
-    )
-    val deleteAlpha by animateFloatAsState(
-        targetValue = if (direction == SwipeToDismissBoxValue.EndToStart) 1f else 0f,
-        animationSpec = tween(Motion.fast),
-        label = "swipeDelete",
-    )
-    Box(Modifier.fillMaxSize()) {
-        Row(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = checkAlpha }
-                .clip(RoundedCornerShape(Radii.md))
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .padding(horizontal = Space.lg),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Default.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(Space.sm))
-            Text(
-                if (card.isDone) "重新打开" else "完成 / 打卡",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-        Row(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = deleteAlpha }
-                .clip(RoundedCornerShape(Radii.md))
-                .background(MaterialTheme.colorScheme.errorContainer)
-                .padding(horizontal = Space.lg),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "删除",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-            )
-            Spacer(Modifier.width(Space.sm))
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun TaskCard(
-    card: TodoCardUi,
-    simple: Boolean,
-    modifier: Modifier = Modifier,
-    onOpen: () -> Unit,
-    onLongPress: () -> Unit,
-    onAction: () -> Unit,
-) {
-    val task = card.task
-    val feedback = LocalFeedback.current
-    val accent = remember(task.color) {
-        runCatching { Color(task.color.toInt()) }.getOrDefault(PaletteFallback)
-    }
-    val done = card.isDone
-    val dim = done || card.checkedToday
-    val container = MaterialTheme.colorScheme.surface
-    val meta = if (simple) {
-        when {
-            done -> "已完成"
-            card.isHabit && card.streak > 0 -> "连续 ${card.streak} 天"
-            card.checkedToday -> "今日已打卡"
-            card.isCountBased -> "按次打卡"
-            else -> "${task.focusMinutes} 分钟"
-        }
-    } else {
-        buildList {
-            add(
-                when (task.type) {
-                    TaskType.HABIT -> "习惯"
-                    TaskType.TODO -> "待办"
-                    TaskType.GOAL -> "目标"
-                    TaskType.POMODORO -> "番茄"
-                },
-            )
-            when (task.timerMode) {
-                "none" -> Unit
-                "countup" -> add("正向计时")
-                else -> add("${task.focusMinutes} 分钟")
-            }
-            if (card.isHabit && card.streak > 0) add("连续 ${card.streak} 天")
-            if (card.isTimed && card.todayFocusCount > 0) add("今日 ${card.todayFocusCount} 个番茄")
-            if (done) add("已完成")
-        }.joinToString(" · ")
-    }
-
-    val goal = card.goal
-    val goalLabel: String? = goal?.takeIf { (it.target ?: 0) > 0 }?.let { g ->
-        val target = g.target ?: 0
-        if (g.unit == "小时") "目标 ${g.used / 3600}/${target / 3600} 小时"
-        else "目标 ${g.used}/$target 次"
-    }
-    val progressLabel: String? = when {
-        task.timerMode == "none" && card.habitTarget > 1 -> "今日 ${card.todayCheckInCount}/${card.habitTarget}"
-        card.isHabit && card.habitTarget > 1 -> "今日 ${card.todayCheckInCount}/${card.habitTarget}"
-        goalLabel != null -> goalLabel
-        card.subtaskTotal > 0 -> "子任务 ${card.subtaskDone}/${card.subtaskTotal}"
-        task.estimatedPomos > 0 -> "番茄 ${task.completedPomos}/${task.estimatedPomos}"
-        else -> null
-    }
-    val progress: Float? = when {
-        task.timerMode == "none" && card.habitTarget > 1 ->
-            card.todayCheckInCount.toFloat() / card.habitTarget
-        goal?.ratio != null -> goal.ratio
-        card.subtaskTotal > 0 -> card.subtaskDone.toFloat() / card.subtaskTotal
-        task.estimatedPomos > 0 -> task.completedPomos.toFloat() / task.estimatedPomos
-        else -> null
-    }
-
-    Surface(
-        shape = RoundedCornerShape(Radii.md),
-        color = container,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (card.checkedToday || done) {
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-            } else {
-                MaterialTheme.colorScheme.outlineVariant
-            },
-        ),
-        modifier = modifier
-            .fillMaxWidth()
-            .animateContentSize()
-            .combinedClickable(
-                onClick = {
-                    feedback?.tap()
-                    onOpen()
-                },
-                onLongClick = {
-                    feedback?.tap()
-                    onLongPress()
-                },
-            ),
-    ) {
-        Row(
-            Modifier.padding(horizontal = Space.lg, vertical = Space.md).heightIn(min = 64.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
             Box(
                 Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(Radii.sm))
-                    .background(accent.copy(alpha = if (dim) 0.08f else 0.14f)),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = Space.lg, end = Space.sm, top = Space.xxs, bottom = Space.xxs),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(task.icon ?: "🍅", fontSize = 19.sp)
-            }
-            Spacer(Modifier.width(Space.md))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    task.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (dim) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                    textDecoration = if (done) TextDecoration.LineThrough else null,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
                 )
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.width(Space.sm))
                 Text(
-                    meta,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    "自由专注 · $focusMinutes 分钟",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
-                if (!simple && progress != null && progressLabel != null) {
-                    Spacer(Modifier.height(Space.sm))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ThinProgress(
-                            progress = progress,
-                            modifier = Modifier.weight(1f),
-                            color = if (dim) accent.copy(alpha = 0.5f) else accent,
-                            height = 3.dp,
-                        )
-                        Spacer(Modifier.width(Space.sm))
-                        Text(
-                            progressLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.width(Space.sm))
-            TaskAction(card = card, accent = accent, onAction = onAction)
-        }
-    }
-}
-
-@Composable
-private fun TaskAction(card: TodoCardUi, accent: Color, onAction: () -> Unit) {
-    val checked = card.isDone || card.checkedToday
-    val bg = if (checked) accent.copy(alpha = 0.12f) else accent
-    // 浅色任务色上白字会糊，按亮度切到深色前景
-    val fg = if (checked) accent else if (accent.luminance() > 0.62f) Color(0xFF3A2A24) else Color.White
-    val icon = when {
-        card.isDone -> Icons.Default.Check
-        card.isCountBased -> if (card.checkedToday) Icons.Default.Check else Icons.Default.Add
-        else -> Icons.Default.PlayArrow
-    }
-    val description = when {
-        card.isDone -> "重新打开"
-        card.checkedToday -> "撤销打卡"
-        card.isCountBased -> "打卡"
-        else -> "开始专注"
-    }
-    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-        Surface(
-            onClick = onAction,
-            shape = CircleShape,
-            color = bg,
-            modifier = Modifier.size(44.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Crossfade(
-                    targetState = icon,
-                    animationSpec = tween(180),
-                    label = "taskActionIcon",
-                ) { current ->
-                    Icon(
-                        current,
-                        contentDescription = description,
-                        tint = fg,
-                        modifier = Modifier.size(20.dp),
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onStartFocus) {
+                    Text(
+                        "开始",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
@@ -1030,7 +897,64 @@ private fun TaskAction(card: TodoCardUi, accent: Color, onAction: () -> Unit) {
     }
 }
 
-private val PaletteFallback = Color(0xFFE0553F)
+/** 首页内联搜索：只过滤标题与备注，不碰排序与筛选。 */
+@Composable
+private fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    Surface(
+        shape = RoundedCornerShape(Radii.sm),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = Space.md, end = Space.xs, top = Space.xs, bottom = Space.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Default.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(Space.sm))
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                decorationBox = { innerTextField ->
+                    if (query.isEmpty()) {
+                        Text(
+                            "搜索标题或备注",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    innerTextField()
+                },
+            )
+            IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "关闭搜索",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
 
 /** 提醒时间的系统选择器；默认值按 24 小时制。 */
 private fun pickReminderTime(context: Context, initial: String, onPick: (String) -> Unit) {

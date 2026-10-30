@@ -54,7 +54,7 @@ fun FocusTopBar(
         IconButton(onClick = onBack, modifier = Modifier.size(44.dp)) {
             Icon(
                 Icons.Default.ArrowBack,
-                contentDescription = "退出专注",
+                contentDescription = "收起专注",
                 tint = Ink.copy(alpha = 0.92f),
                 modifier = Modifier.size(22.dp),
             )

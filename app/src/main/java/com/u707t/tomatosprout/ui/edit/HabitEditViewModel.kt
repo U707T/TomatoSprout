@@ -77,6 +77,23 @@ class HabitEditViewModel @Inject constructor(
     private var existingRepeatRule: String? = null
     private var existingDeletedAt: Long? = null
 
+    /** 打开页面时的快照，用来判断有没有未保存的修改。 */
+    private var baseline: EditState? = null
+
+    private fun snapshot(state: EditState) = state.copy(
+        loading = false,
+        saving = false,
+        error = null,
+        // 已存在任务的子任务是即时落库的，不算「未保存」
+        subtasks = emptyList(),
+    )
+
+    /** 有未保存修改时，返回要先问一句。 */
+    fun isDirty(): Boolean {
+        val base = baseline ?: return false
+        return snapshot(_state.value) != base
+    }
+
     init {
         viewModelScope.launch { load() }
     }
@@ -92,6 +109,7 @@ class HabitEditViewModel @Inject constructor(
                     focusMinutes = prefillMinutes?.coerceIn(5, 180) ?: it.focusMinutes,
                 )
             }
+            baseline = snapshot(_state.value)
             return
         }
         val task = useCase.task(taskId)
@@ -136,6 +154,7 @@ class HabitEditViewModel @Inject constructor(
                 loading = false,
             )
         }
+        baseline = snapshot(_state.value)
     }
 
     fun edit(transform: (EditState) -> EditState) = _state.update(transform)

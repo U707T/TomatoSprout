@@ -106,7 +106,7 @@ fun StatsScreen(
                 Alignment.Center,
             ) {
                 EmptyState(
-                    emoji = "📊",
+                    icon = Icons.Default.DateRange,
                     title = "还没有可以回顾的记录",
                     message = "先创建习惯或完成一次专注，统计会自动汇成趋势、分布与时间轴。",
                     actionLabel = "创建习惯",

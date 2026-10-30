@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.Toast
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -38,10 +39,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -272,8 +275,12 @@ fun FocusTimerScreen(
     var audioPanel by remember { mutableStateOf(false) }
     var brightnessPanel by remember { mutableStateOf(false) }
     var resetConfirm by remember { mutableStateOf(false) }
+    var leaveConfirm by remember { mutableStateOf(false) }
     var taskMenu by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
+
+    // 计时进行中，系统返回键先问一句：收起 / 结束 / 继续
+    BackHandler(enabled = timer != null) { leaveConfirm = true }
 
     Box(
         Modifier
@@ -297,7 +304,7 @@ fun FocusTimerScreen(
             FocusTopBar(
                 immersive = ui.immersive,
                 keepScreenOn = ui.keepScreenOn,
-                onBack = onExit,
+                onBack = { if (timer != null) leaveConfirm = true else onExit() },
                 onToggleImmersive = viewModel::toggleImmersive,
                 onToggleKeepScreenOn = { viewModel.setKeepScreenOn(!ui.keepScreenOn) },
                 onShare = {
@@ -434,6 +441,35 @@ fun FocusTimerScreen(
         SnackbarHost(
             hostState = snackbar,
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 110.dp),
+        )
+    }
+
+    if (leaveConfirm) {
+        val dialogInk = Color(0xFFF1E9E2)
+        AlertDialog(
+            onDismissRequest = { leaveConfirm = false },
+            containerColor = Color(0xFF241E1A),
+            titleContentColor = dialogInk,
+            textContentColor = dialogInk.copy(alpha = 0.82f),
+            title = { Text("专注还在进行") },
+            text = {
+                Text("离开这一页不会停止计时，倒计时会继续走，可以从通知点回来。想现在就结束，用「结束并结算」。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    leaveConfirm = false
+                    viewModel.requestStop()
+                }) { Text("结束并结算", color = Color(0xFFFFB3A3)) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        leaveConfirm = false
+                        onExit()
+                    }) { Text("留在后台", color = dialogInk) }
+                    TextButton(onClick = { leaveConfirm = false }) { Text("继续专注", color = dialogInk) }
+                }
+            },
         )
     }
 

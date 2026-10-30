@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -117,7 +118,7 @@ fun WishlistScreen(onBack: () -> Unit, viewModel: WishlistViewModel = hiltViewMo
             when (val s = state) {
                 WishUiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 WishUiState.Empty -> EmptyState(
-                    "🌠",
+                    Icons.Default.FavoriteBorder,
                     "还没有愿望",
                     "写下一件想做的事。它只存在这台设备上，也只属于你。",
                 )

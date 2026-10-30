@@ -171,6 +171,15 @@ fun TomatoApp(
                         },
                         simpleMode = settings.simpleMode,
                         onSimpleModeChange = viewModel::setSimple,
+                        focusMinutes = settings.defaultFocusMinutes,
+                        onStartFreeFocus = {
+                            nav.navigate(
+                                FocusRoute(
+                                    timerMode = if (settings.countUpMode) "countup" else "countdown",
+                                    minutes = settings.defaultFocusMinutes,
+                                ),
+                            )
+                        },
                     )
                 }
                 composable<StatsRoute> {

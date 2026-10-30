@@ -97,6 +97,15 @@ fun HistoryScreen(
             contentPadding = PaddingValues(16.dp, 4.dp, 16.dp, 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            if (ui.loading) {
+                item(key = "loading") {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                }
+            }
             item(key = "calendar") {
                 MonthCalendar(
                     month = ui.month,

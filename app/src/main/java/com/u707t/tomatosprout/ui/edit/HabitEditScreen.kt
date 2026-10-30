@@ -5,6 +5,7 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -39,6 +40,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -72,6 +75,7 @@ import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.components.SoftCard
 import com.u707t.tomatosprout.ui.theme.Space
 import com.u707t.tomatosprout.ui.theme.Tomato
+import com.u707t.tomatosprout.ui.theme.readableContentColor
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -91,9 +95,20 @@ fun HabitEditScreen(
     val feedback = LocalFeedback.current
     var subtaskText by remember { mutableStateOf("") }
     var showDelete by remember { mutableStateOf(false) }
+    var showDiscard by remember { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
     val reminderPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     LaunchedEffect(Unit) { viewModel.saved.collect { onBack() } }
+    LaunchedEffect(state.error) {
+        state.error?.let { snackbar.showSnackbar(it) }
+    }
+
+    fun attemptBack() {
+        if (viewModel.isDirty()) showDiscard = true else onBack()
+    }
+
+    BackHandler { attemptBack() }
 
     fun pickDate(initial: LocalDate, onPick: (LocalDate) -> Unit) {
         DatePickerDialog(
@@ -107,7 +122,7 @@ fun HabitEditScreen(
         topBar = {
             BackBar(
                 title = if (state.isNew) "新建" else "编辑",
-                onBack = onBack,
+                onBack = { attemptBack() },
                 actions = {
                     if (!state.isNew) {
                         IconButton(onClick = {
@@ -134,6 +149,7 @@ fun HabitEditScreen(
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         if (state.loading) {
             Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) { CircularProgressIndicator() }
@@ -248,7 +264,9 @@ fun HabitEditScreen(
                                 .clickable { viewModel.setColor(color) },
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (state.color == color) Text("✓", color = Color.White)
+                            if (state.color == color) {
+                                Text("✓", color = Color(color).readableContentColor())
+                            }
                         }
                     }
                 }
@@ -500,6 +518,37 @@ fun HabitEditScreen(
                 feedback?.tap()
                 showDelete = false
             }) { Text("取消") } },
+        )
+    }
+
+    if (showDiscard) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDiscard = false },
+            title = { Text("还没保存") },
+            text = { Text("这次的修改还没保存，离开后会丢失。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        feedback?.confirm()
+                        showDiscard = false
+                        viewModel.save()
+                    },
+                    enabled = !state.saving,
+                ) { Text("保存") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        feedback?.tap()
+                        showDiscard = false
+                    }) { Text("取消") }
+                    TextButton(onClick = {
+                        feedback?.tap()
+                        showDiscard = false
+                        onBack()
+                    }) { Text("放弃修改") }
+                }
+            },
         )
     }
 }

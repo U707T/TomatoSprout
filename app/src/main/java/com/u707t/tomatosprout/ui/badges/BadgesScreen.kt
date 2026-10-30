@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -64,7 +66,7 @@ fun BadgesScreen(onBack: () -> Unit, viewModel: BadgesViewModel = hiltViewModel(
                 Modifier.fillMaxSize().padding(padding),
                 Alignment.Center,
             ) {
-                EmptyState("🏅", "徽章还在路上", "完成第一次打卡后，这里会亮起第一枚徽章。")
+                EmptyState(Icons.Default.Star, "徽章还在路上", "完成第一次打卡后，这里会亮起第一枚徽章。")
             }
 
             is BadgesUiState.Error -> Box(

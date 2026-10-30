@@ -49,17 +49,35 @@ class CheckInUseCase @Inject constructor(
             return CheckInResult.Checked(streakOf(rule, today), newBadges)
         }
         if (existing.isNotEmpty()) {
-            existing.forEach { checkIns.softDelete(it.id, now) }
-            if (task.type == TaskType.TODO) {
-                tasks.setStatus(task.id, TaskStatus.TODO, now)
-                task.parentId?.let { tasks.setStatus(it, TaskStatus.TODO, now) }
-            }
-            return CheckInResult.Undone()
+            return removeToday(task, existing, now)
         }
         insertCheckIn(task.id, today, source = "manual", isMakeup = false, now = now)
         if (task.type == TaskType.TODO) markDone(task, now)
         val newBadges = runCatching { badges.refresh() }.getOrDefault(emptyList())
         return CheckInResult.Checked(rule?.let { streakOf(it, today) } ?: 0, newBadges)
+    }
+
+    /**
+     * 只撤销、不做 toggle：删掉今天已有的打卡并把任务回到未完成。
+     *
+     * 首页撤销条用它，避免「撤销后 10 秒内又打了卡，再点恢复反而把新打卡撤掉」的 toggle 竞态。
+     */
+    suspend fun undoToday(task: Task): CheckInResult {
+        if (task.deletedAt != null) return CheckInResult.Rejected("任务已删除")
+        val now = clock.nowMillis()
+        val today = clock.today()
+        val existing = checkIns.forTask(task.id).filter { it.date == today && it.deletedAt == null }
+        if (existing.isEmpty()) return CheckInResult.Undone()
+        return removeToday(task, existing, now)
+    }
+
+    private suspend fun removeToday(task: Task, existing: List<CheckIn>, now: Long): CheckInResult {
+        existing.forEach { checkIns.softDelete(it.id, now) }
+        if (task.type == TaskType.TODO) {
+            tasks.setStatus(task.id, TaskStatus.TODO, now)
+            task.parentId?.let { tasks.setStatus(it, TaskStatus.TODO, now) }
+        }
+        return CheckInResult.Undone()
     }
 
     /**
