@@ -54,6 +54,7 @@
             <intent-filter>
                 <action android:name="com.u707t.tomatosprout.focus.TOGGLE" />
                 <action android:name="com.u707t.tomatosprout.focus.STOP" />
+                <action android:name="com.u707t.tomatosprout.focus.EXTEND" />
             </intent-filter>
         </receiver>
 

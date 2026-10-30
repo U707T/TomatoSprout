@@ -32,6 +32,33 @@ class TimerTest {
     }
 
     @Test
+    fun `extend pushes the deadline and keeps elapsed time`() {
+        val state = TimerEngine.start(TimerMode.COUNTDOWN, 25 * 60, t0, 0L)
+        val extended = TimerEngine.extend(state, 5 * 60)
+        assertEquals(30 * 60, extended.plannedSeconds)
+        // 已经跑过的时间不清零，剩余时间按新计划重算
+        assertEquals(30 * 60_000L - 60_000L, extended.remainingMillis(t0 + 60_000))
+        // 原状态不可变
+        assertEquals(25 * 60, state.plannedSeconds)
+    }
+
+    @Test
+    fun `extend ignores countup and finished timers`() {
+        val countUp = TimerEngine.start(TimerMode.COUNTUP, 60, t0, 0L)
+        assertEquals(countUp, TimerEngine.extend(countUp, 300))
+
+        val finished = TimerEngine.stop(TimerEngine.start(TimerMode.COUNTDOWN, 60, t0, 0L), t0 + 60_000)
+        assertEquals(finished, TimerEngine.extend(finished, 300))
+    }
+
+    @Test
+    fun `extend stops at the three hour ceiling`() {
+        val state = TimerEngine.start(TimerMode.COUNTDOWN, 170 * 60, t0, 0L)
+        val extended = TimerEngine.extend(state, 60 * 60)
+        assertEquals(TimerEngine.MAX_PLANNED_SECONDS, extended.plannedSeconds)
+    }
+
+    @Test
     fun `strict mode rejects pause`() {
         val state = TimerEngine.start(TimerMode.COUNTDOWN, 60, t0, 0L, strict = true)
         assertInstanceOf(PauseResult.StrictBlocked::class.java, TimerEngine.togglePause(state, t0 + 1000))

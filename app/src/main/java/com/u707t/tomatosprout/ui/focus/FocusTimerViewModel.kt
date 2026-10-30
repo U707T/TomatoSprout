@@ -104,6 +104,7 @@ class FocusTimerViewModel @Inject constructor(
         taskTitle = { sessionTask?.title ?: "自由专注" },
         notificationsEnabled = { settings.value.notificationsEnabled },
         richSurface = { settings.value.liveActivityEnabled },
+        forceFocus = { settings.value.forceFocusNotification },
         onCountdownFinished = { settle(FocusEndReason.COUNTDOWN_FINISHED) },
         onCommandPoll = { consumePendingCommand() },
     )
@@ -211,6 +212,7 @@ class FocusTimerViewModel @Inject constructor(
         when (FocusCommandStore.consume(context)) {
             FocusActionReceiver.ACTION_TOGGLE -> togglePause()
             FocusActionReceiver.ACTION_STOP -> requestStop()
+            FocusActionReceiver.ACTION_EXTEND -> controller.extend()
         }
     }
 
@@ -482,6 +484,19 @@ class FocusTimerViewModel @Inject constructor(
         stopConfirm.value = null
         summary.value = null
         prefs.stopAudio()
+
+        // 自然结束（含休息）给一次「完成」提示：小米机型会走焦点通知/岛，其余系统是普通通知。
+        // 手动中断不提示，避免把「放弃」也做成庆祝。
+        val naturalFinish = reason == FocusEndReason.COUNTDOWN_FINISHED &&
+            stopped.mode == TimerMode.COUNTDOWN &&
+            elapsed >= stopped.plannedSeconds
+        if (naturalFinish && settings.value.notificationsEnabled && settings.value.liveActivityEnabled) {
+            live.notifyCompleted(
+                title = taskTitle,
+                minutes = max(1, elapsed / 60),
+                isBreak = stopped.isBreak,
+            )
+        }
 
         if (stopped.isBreak) {
             summary.value = SessionSummary(

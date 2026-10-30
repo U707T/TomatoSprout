@@ -37,6 +37,8 @@ class FocusTimerController(
     private val notificationsEnabled: () -> Boolean,
     /** 是否允许使用系统实时活动 / 超级岛；关闭后只发普通通知卡片。 */
     private val richSurface: () -> Boolean,
+    /** 是否无视系统探测、强制发小米焦点通知。 */
+    private val forceFocus: () -> Boolean,
     private val onCountdownFinished: () -> Unit,
     private val onCommandPoll: () -> Unit,
 ) {
@@ -191,6 +193,23 @@ class FocusTimerController(
         scheduleFallback(resumed, current)
     }
 
+    /**
+     * 通知/岛上的「+5 分钟」：延长当前倒计时。
+     * 返回是否真的改了计划时长（正计时、已暂停、已结束都不改）。
+     */
+    fun extend(seconds: Int = 300): Boolean {
+        val state = _timer.value ?: return false
+        val nowMono = SystemClock.elapsedRealtime()
+        val extended = TimerEngine.extend(TimerEngine.tick(state, nowMono), seconds)
+        if (extended == state) return false
+        _timer.value = extended
+        _now.value = nowMono
+        FocusTimerStore.save(context, extended, taskId())
+        updateLive(extended, nowMono)
+        scheduleFallback(extended, nowMono)
+        return true
+    }
+
     /** 结算到调用时刻，不做清理；用于停止/确认前的判断。 */
     fun snapshot(): Stopped? {
         val state = _timer.value ?: return null
@@ -239,6 +258,7 @@ class FocusTimerController(
             nowMono = nowMono,
             title = if (state.isBreak) "休息一下" else taskTitle(),
             richSurface = richSurface(),
+            forceFocus = forceFocus(),
         )
     }
 }

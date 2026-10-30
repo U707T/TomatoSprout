@@ -20,19 +20,30 @@ object LiveActivityStatus {
         val settingsIntent: Intent?,
     )
 
-    fun describe(context: Context, enabled: Boolean): Info {
+    fun describe(
+        context: Context,
+        enabled: Boolean,
+        forceFocus: Boolean = false,
+    ): Info {
         if (!enabled) {
             return Info("已关闭：专注时只显示普通通知卡片", null)
         }
+        if (forceFocus) {
+            return Info("澎湃 OS 焦点通知 · 已强制发送（系统仍可能拦截）", null)
+        }
         val focus = runCatching { HyperOsFocus.probe(context) }
-            .getOrDefault(HyperOsFocus.Support(0, null))
+            .getOrDefault(HyperOsFocus.Support(HyperOsFocus.PROTOCOL_UNKNOWN, null))
         if (HyperOsFocus.isXiaomiDevice()) {
-            val name = if (focus.supportsIsland) "超级岛" else "焦点通知"
+            val name = when {
+                !focus.protocolKnown -> "焦点通知 / 超级岛"
+                focus.supportsIsland -> "超级岛"
+                else -> "焦点通知"
+            }
             val settings = HyperOsFocus.notificationSettings(context)
             return when (focus.canShowFocus) {
                 true -> Info("澎湃 OS $name · 已允许", null)
                 false -> Info("澎湃 OS $name 未允许，点这里去开启", settings)
-                null -> Info("澎湃 OS $name · 状态未知，点这里检查", settings)
+                else -> Info("澎湃 OS $name · 状态未知（OS4 由白名单决定），点这里检查", settings)
             }
         }
         if (Build.VERSION.SDK_INT >= 36) {

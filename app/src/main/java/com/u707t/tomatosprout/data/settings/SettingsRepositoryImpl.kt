@@ -62,6 +62,7 @@ class SettingsRepositoryImpl @Inject constructor(
         simpleMode = this[K_SIMPLE] ?: false,
         notificationsEnabled = this[K_NOTIFICATIONS] ?: true,
         liveActivityEnabled = this[K_LIVE_ACTIVITY] ?: true,
+        forceFocusNotification = this[K_FORCE_FOCUS] ?: false,
         dndEnabled = this[K_DND] ?: false,
         dndStart = this[K_DND_START] ?: "22:00",
         dndEnd = this[K_DND_END] ?: "07:00",
@@ -85,6 +86,7 @@ class SettingsRepositoryImpl @Inject constructor(
         this[K_SIMPLE] = s.simpleMode
         this[K_NOTIFICATIONS] = s.notificationsEnabled
         this[K_LIVE_ACTIVITY] = s.liveActivityEnabled
+        this[K_FORCE_FOCUS] = s.forceFocusNotification
         this[K_DND] = s.dndEnabled
         this[K_DND_START] = s.dndStart
         this[K_DND_END] = s.dndEnd
@@ -108,6 +110,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val K_SIMPLE = booleanPreferencesKey("simple_mode")
         val K_NOTIFICATIONS = booleanPreferencesKey("notifications")
         val K_LIVE_ACTIVITY = booleanPreferencesKey("live_activity")
+        val K_FORCE_FOCUS = booleanPreferencesKey("force_focus_notification")
         val K_DND = booleanPreferencesKey("dnd_enabled")
         val K_DND_START = stringPreferencesKey("dnd_start")
         val K_DND_END = stringPreferencesKey("dnd_end")

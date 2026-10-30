@@ -2,7 +2,6 @@ package com.u707t.tomatosprout.notify
 
 import android.annotation.SuppressLint
 import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -19,31 +18,40 @@ import com.u707t.tomatosprout.domain.TimerState
 /**
  * 把「进行中的专注」翻译成三种系统呈现：
  *
- * - [Surface.HYPER_OS]：澎湃 OS 焦点通知 / 超级岛（`miui.focus.*` extras）；
- * - [Surface.LIVE_UPDATE]：Android 16 起的进度型通知（`Notification.ProgressStyle` + 常驻提升）；
- * - [Surface.PLAIN]：自定义 RemoteViews 卡片，所有系统都能显示。
+ * - [LiveSurface.HYPER_OS]：澎湃 OS 焦点通知 / 超级岛（`miui.focus.*` extras）；
+ * - [LiveSurface.LIVE_UPDATE]：Android 16 起的进度型通知（`Notification.ProgressStyle` + 常驻提升）；
+ * - [LiveSurface.PLAIN]：自定义 RemoteViews 卡片，所有系统都能显示。
  *
  * 三者互斥：同一个通知既设 ProgressStyle 又设自定义布局时，系统只会挑一个渲染，
  * 所以按机型能力挑一条，挑不到就往下退，不做叠加。
  */
 internal class FocusLiveNotification(private val context: Context) {
 
-    enum class Surface { HYPER_OS, LIVE_UPDATE, PLAIN }
-
     data class Built(
         val notification: Notification,
-        val surface: Surface,
+        val surface: LiveSurface,
         /** 内容指纹：指纹相同且未到重发间隔时，跳过本次 notify()。 */
         val key: String,
         /** 内容指纹相同时的最短重发间隔。 */
         val minIntervalMillis: Long,
+        /** 本次档位的判定原因，写进自检面板。 */
+        val reason: String,
     )
 
-    fun build(state: TimerState, nowMono: Long, title: String, richSurface: Boolean): Built {
+    fun build(
+        state: TimerState,
+        nowMono: Long,
+        title: String,
+        richSurface: Boolean,
+        forceFocus: Boolean,
+        firstFrame: Boolean,
+    ): Built {
         val running = state.phase == TimerPhase.RUNNING
         val paused = state.phase == TimerPhase.PAUSED
         val countUp = state.mode == TimerMode.COUNTUP
         val nowWall = System.currentTimeMillis()
+        val remaining = (state.remainingMillis(nowMono) / 1000L).toInt()
+        val elapsed = state.elapsedSeconds(nowMono)
 
         val input = FocusIslandInput(
             sequence = SEQUENCE.incrementAndGet(),
@@ -52,55 +60,82 @@ internal class FocusLiveNotification(private val context: Context) {
             paused = paused,
             countUp = countUp,
             plannedSeconds = state.plannedSeconds,
-            elapsedSeconds = state.elapsedSeconds(nowMono),
-            remainingSeconds = (state.remainingMillis(nowMono) / 1000L).toInt(),
-            endEpochMillis = if (running && !countUp) nowWall + state.remainingMillis(nowMono) else null,
-            startEpochMillis = if (running && countUp) nowWall - state.elapsedMillis(nowMono) else null,
+            elapsedSeconds = elapsed,
+            remainingSeconds = remaining,
+            // 暂停时也要给绝对时刻：timerType=-2/2 会让系统按 timerSystemCurrent 冻结读数
+            endEpochMillis = if (countUp) null else nowWall + remaining * 1000L,
+            startEpochMillis = if (countUp) nowWall - state.elapsedMillis(nowMono) else null,
             nowEpochMillis = nowWall,
+            firstFrame = firstFrame,
         )
 
-        val surface = chooseSurface(richSurface)
+        val decision = LiveSurfacePolicy.decide(context, richSurface, forceFocus)
         val clockText = FocusIslandPayload.clock(input)
         val builder = baseBuilder(state, input, clockText)
-        when (surface) {
-            Surface.HYPER_OS -> builder.addExtras(hypeOsExtras(input))
-            Surface.LIVE_UPDATE -> applyLiveUpdate(builder, input, running)
-            Surface.PLAIN -> {
+        when (decision.surface) {
+            LiveSurface.HYPER_OS -> builder.addExtras(hypeOsExtras(input))
+            LiveSurface.LIVE_UPDATE -> applyLiveUpdate(builder, input, running)
+            LiveSurface.PLAIN -> {
                 val views = remoteViews(input, clockText, paused)
                 builder.setCustomContentView(views).setCustomBigContentView(views)
             }
         }
 
         // 普通卡片要逐秒走字；实时活动/超级岛由系统自己走秒，10 秒补一次进度即可
-        val bucket = if (surface == Surface.PLAIN) 1 else 10
+        val bucket = if (decision.surface == LiveSurface.PLAIN) 1 else 10
         val key = buildString {
-            append(surface).append('|').append(state.phase).append('|').append(state.mode)
+            append(decision.surface).append('|').append(state.phase).append('|').append(state.mode)
             append('|').append(state.isBreak).append('|').append(state.plannedSeconds)
             append('|').append(title).append('|').append(input.remainingSeconds / bucket)
         }
         return Built(
             notification = builder.build(),
-            surface = surface,
+            surface = decision.surface,
             key = key,
             // 同内容重发的间隔：普通卡片要逐秒走字，实时活动一分钟补一次只作兜底
-            minIntervalMillis = if (surface == Surface.PLAIN) 1_000L else 60_000L,
+            minIntervalMillis = if (decision.surface == LiveSurface.PLAIN) 1_000L else 60_000L,
+            reason = decision.reason,
         )
     }
 
-    private fun chooseSurface(richSurface: Boolean): Surface {
-        if (!richSurface) return Surface.PLAIN
-        // 只要是小米系机型就带焦点通知 extras：能不能出岛由系统决定，
-        // 我们这边的协议/授权查询只用于诊断，绝不作为「是否发送」的闸门。
-        if (HyperOsFocus.isXiaomiDevice()) return Surface.HYPER_OS
-        if (Build.VERSION.SDK_INT >= 36 && promotionAllowed()) return Surface.LIVE_UPDATE
-        return Surface.PLAIN
-    }
-
-    private fun promotionAllowed(): Boolean {
-        if (Build.VERSION.SDK_INT < 36) return false
-        return runCatching {
-            context.getSystemService(NotificationManager::class.java).canPostPromotedNotifications()
-        }.getOrDefault(true)
+    /**
+     * 专注完成 / 休息结束的一次性提示。
+     *
+     * 用独立的通知 id，不覆盖正在进行的专注；岛只驻留 20 秒，通知本身也会自动消失。
+     * 小米机型带焦点 extras（首帧浮现），其余系统就是一条普通通知。
+     */
+    fun buildFinished(title: String, isBreak: Boolean, minutes: Int): Notification {
+        val safeMinutes = minutes.coerceAtLeast(1)
+        val input = FocusIslandInput(
+            sequence = SEQUENCE.incrementAndGet(),
+            title = title,
+            isBreak = isBreak,
+            paused = false,
+            countUp = false,
+            plannedSeconds = safeMinutes * 60,
+            elapsedSeconds = safeMinutes * 60,
+            remainingSeconds = 0,
+            endEpochMillis = null,
+            startEpochMillis = null,
+            nowEpochMillis = System.currentTimeMillis(),
+            firstFrame = true,
+            finished = true,
+        )
+        val builder = Notification.Builder(context, NotificationChannels.CHANNEL_FOCUS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(if (isBreak) "休息结束" else "专注完成 · $safeMinutes 分钟")
+            .setContentText(if (isBreak) "准备下一段专注吧" else "$title 已记录")
+            .setOngoing(false)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setTimeoutAfter(FINISHED_TIMEOUT_MILLIS)
+            .setCategory(Notification.CATEGORY_STATUS)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setContentIntent(ContentIntents.openApp(context, MainActivity.NAV_FOCUS))
+        if (HyperOsFocus.isXiaomiDevice()) {
+            builder.addExtras(hypeOsExtras(input, withActions = false))
+        }
+        return builder.build()
     }
 
     private fun baseBuilder(
@@ -129,6 +164,10 @@ internal class FocusLiveNotification(private val context: Context) {
             .setContentIntent(ContentIntents.openApp(context, MainActivity.NAV_FOCUS))
             .addAction(toggleAction(paused))
             .addAction(stopAction())
+        // 倒计时才谈得上延长：正计时没有终点，已结束的更不该再续
+        if (state.mode == TimerMode.COUNTDOWN && state.isActive) {
+            builder.addAction(extendAction())
+        }
 
         // 系统计时器：把「结束时刻」交给 SystemUI，进程被回收后秒数也不会停
         val anchor = when {
@@ -150,7 +189,7 @@ internal class FocusLiveNotification(private val context: Context) {
     private fun applyLiveUpdate(builder: Notification.Builder, input: FocusIslandInput, running: Boolean) {
         if (Build.VERSION.SDK_INT < 36) return
         val segment = Notification.ProgressStyle.Segment(FocusIslandPayload.PROGRESS_MAX)
-            .setColor(android.graphics.Color.parseColor(input.accentColor))
+            .setColor(android.graphics.Color.parseColor(FocusIslandPayload.accentFor(input.isBreak)))
         val style = Notification.ProgressStyle()
             .setStyledByProgress(true)
             .setProgressSegments(listOf(segment))
@@ -169,21 +208,26 @@ internal class FocusLiveNotification(private val context: Context) {
         runCatching { builder.setRequestPromotedOngoing(true) }
     }
 
-    private fun hypeOsExtras(input: FocusIslandInput): Bundle {
+    private fun hypeOsExtras(input: FocusIslandInput, withActions: Boolean = true): Bundle {
         val pics = Bundle().apply {
             putParcelable(
                 FocusIslandPayload.PIC_MAIN,
                 Icon.createWithResource(context, R.drawable.ic_notification),
             )
         }
-        val actions = Bundle().apply {
-            putParcelable(FocusIslandPayload.ACTION_TOGGLE, toggleAction(input.paused))
-            putParcelable(FocusIslandPayload.ACTION_STOP, stopAction())
-        }
         return Bundle().apply {
             putString(EXTRA_FOCUS_PARAM, FocusIslandPayload.build(input).toString())
             putBundle(EXTRA_FOCUS_PICS, pics)
-            putBundle(EXTRA_FOCUS_ACTIONS, actions)
+            if (withActions) {
+                putBundle(
+                    EXTRA_FOCUS_ACTIONS,
+                    Bundle().apply {
+                        putParcelable(FocusIslandPayload.ACTION_TOGGLE, toggleAction(input.paused))
+                        putParcelable(FocusIslandPayload.ACTION_STOP, stopAction())
+                        putParcelable(FocusIslandPayload.ACTION_EXTEND, extendAction())
+                    },
+                )
+            }
         }
     }
 
@@ -203,34 +247,43 @@ internal class FocusLiveNotification(private val context: Context) {
                 R.id.focus_toggle,
                 if (paused) R.drawable.ic_play else R.drawable.ic_pause,
             )
-            setOnClickPendingIntent(R.id.focus_toggle, focusIntent(FocusActionReceiver.ACTION_TOGGLE, 1))
-            setOnClickPendingIntent(R.id.focus_stop, focusIntent(FocusActionReceiver.ACTION_STOP, 2))
+            setOnClickPendingIntent(R.id.focus_toggle, actionIntent(FocusActionReceiver.ACTION_TOGGLE, 1))
+            setOnClickPendingIntent(R.id.focus_stop, actionIntent(FocusActionReceiver.ACTION_STOP, 2))
         }
 
     private fun toggleAction(paused: Boolean): Notification.Action = Notification.Action.Builder(
         Icon.createWithResource(context, if (paused) R.drawable.ic_play else R.drawable.ic_pause),
         if (paused) "继续" else "暂停",
-        focusIntent(FocusActionReceiver.ACTION_TOGGLE, 1),
+        actionIntent(FocusActionReceiver.ACTION_TOGGLE, 1),
     ).build()
 
     private fun stopAction(): Notification.Action = Notification.Action.Builder(
         Icon.createWithResource(context, R.drawable.ic_stop),
         "结束",
-        focusIntent(FocusActionReceiver.ACTION_STOP, 2),
+        actionIntent(FocusActionReceiver.ACTION_STOP, 2),
+    ).build()
+
+    /** 通知栏的「+5 分钟」：走广播，不打断当前 App。 */
+    private fun extendAction(): Notification.Action = Notification.Action.Builder(
+        Icon.createWithResource(context, R.drawable.ic_add),
+        "延长 5 分钟",
+        actionIntent(FocusActionReceiver.ACTION_EXTEND, 3),
     ).build()
 
     /**
-     * 直接用 Activity PendingIntent：Android 12+ 限制通知 trampoline（广播/服务里拉起 Activity），
-     * 用广播再 startActivity 会被系统拦截。
+     * 按钮一律走广播：官方对 `miui.focus.actions` 的要求就是广播 PendingIntent，
+     * 并要带 `FLAG_RECEIVER_FOREGROUND` 才能在前台广播队列里及时送达。
+     *
+     * 不用 Activity PendingIntent：Android 12+ 的 trampoline 限制会拦掉
+     * 「通知按钮里拉起 Activity」，而且暂停一下番茄就跳回 App 也很突兀。
      */
-    private fun focusIntent(action: String, request: Int): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra(MainActivity.EXTRA_NAVIGATE, MainActivity.NAV_FOCUS)
-            putExtra(MainActivity.EXTRA_FOCUS_ACTION, action)
+    private fun actionIntent(action: String, request: Int): PendingIntent {
+        val intent = Intent(context, FocusActionReceiver::class.java).apply {
+            this.action = action
+            addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+            setPackage(context.packageName)
         }
-        return PendingIntent.getActivity(
+        return PendingIntent.getBroadcast(
             context,
             request,
             intent,
@@ -241,6 +294,9 @@ internal class FocusLiveNotification(private val context: Context) {
     private companion object {
         /** 帧序号：系统据此判断哪一帧是最新状态，必须严格递增。 */
         val SEQUENCE = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+
+        /** 完成提示在通知栏/岛上停留的时长。 */
+        const val FINISHED_TIMEOUT_MILLIS = 20_000L
 
         /** 澎湃 OS 焦点通知主参数的 extras key。 */
         const val EXTRA_FOCUS_PARAM = "miui.focus.param"

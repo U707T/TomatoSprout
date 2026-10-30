@@ -23,6 +23,11 @@ import javax.inject.Singleton
 object NotificationIds {
     const val FOCUS_LIVE = 1001
     const val FOCUS_FALLBACK = 1002
+    /** 设置页「发送测试岛」专用，避免覆盖真实专注的实时活动。 */
+    const val FOCUS_TEST = 1003
+
+    /** 专注完成 / 休息结束的一次性提示。 */
+    const val FOCUS_DONE = 1004
     const val REMINDER_BASE = 2000
 }
 

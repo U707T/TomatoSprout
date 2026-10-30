@@ -30,8 +30,8 @@ android {
         applicationId = "com.u707t.tomatosprout"
         minSdk = 26
         targetSdk = 36
-        versionCode = 20
-        versionName = "1.10.1"
+        versionCode = 21
+        versionName = "1.11.0"
         vectorDrawables { useSupportLibrary = true }
     }
 

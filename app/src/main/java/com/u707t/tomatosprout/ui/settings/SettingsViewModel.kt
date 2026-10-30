@@ -9,8 +9,11 @@ import com.u707t.tomatosprout.data.reset.DataResetManager
 import com.u707t.tomatosprout.domain.AppSettings
 import com.u707t.tomatosprout.domain.SettingsRepository
 import com.u707t.tomatosprout.domain.ThemeMode
+import com.u707t.tomatosprout.domain.TimerEngine
+import com.u707t.tomatosprout.domain.TimerMode
 import com.u707t.tomatosprout.notify.FocusLiveController
 import com.u707t.tomatosprout.notify.LiveActivityDiagnostics
+import com.u707t.tomatosprout.notify.NotificationPermission
 import com.u707t.tomatosprout.notify.ReminderScheduler
 import com.u707t.tomatosprout.ui.feedback.FeedbackController
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -49,33 +52,39 @@ class SettingsViewModel @Inject constructor(
     fun setSimple(enabled: Boolean) = update { it.copy(simpleMode = enabled) }
     fun setNotifications(enabled: Boolean) = update { it.copy(notificationsEnabled = enabled) }
 
-    fun diagnosticsReport(): String =
-        LiveActivityDiagnostics.report(context, settings.value.liveActivityEnabled)
+    fun diagnosticsReport(): String = LiveActivityDiagnostics.report(
+        context = context,
+        enabled = settings.value.liveActivityEnabled,
+        forceFocus = settings.value.forceFocusNotification,
+    )
 
     fun liveActivitySettingsIntent(): android.content.Intent? =
         LiveActivityDiagnostics.settingsIntent(context)
 
     /** 发一条 60 秒的假专注，用来当场验证系统是否会把它放进岛。 */
     fun sendTestIsland() {
-        if (!com.u707t.tomatosprout.notify.NotificationPermission.canPost(context)) {
+        if (!NotificationPermission.canPost(context)) {
             messages.tryEmit("系统还没有允许通知，先在通知设置里打开")
             return
         }
         val nowMono = android.os.SystemClock.elapsedRealtime()
-        val state = com.u707t.tomatosprout.domain.TimerEngine.start(
-            mode = com.u707t.tomatosprout.domain.TimerMode.COUNTDOWN,
+        val state = TimerEngine.start(
+            mode = TimerMode.COUNTDOWN,
             plannedSeconds = 120,
             nowMono = nowMono,
             nowEpoch = System.currentTimeMillis(),
         )
-        live.update(state, nowMono, "番茄芽 · 岛测试")
-        messages.tryEmit("已发送测试岛，60 秒后自动消失")
+        val posted = live.postTest(state, nowMono, "番茄芽 · 岛测试")
+        messages.tryEmit(
+            if (posted) "已发送测试岛，60 秒后自动消失" else "发送失败：系统拒绝了这条通知",
+        )
         viewModelScope.launch {
             kotlinx.coroutines.delay(60_000)
-            live.cancel()
+            live.cancelTest()
         }
     }
     fun setLiveActivity(enabled: Boolean) = update { it.copy(liveActivityEnabled = enabled) }
+    fun setForceFocus(enabled: Boolean) = update { it.copy(forceFocusNotification = enabled) }
     fun setDnd(enabled: Boolean) = update { it.copy(dndEnabled = enabled) }
     fun setDndStart(value: String) = update { it.copy(dndStart = value) }
     fun setDndEnd(value: String) = update { it.copy(dndEnd = value) }

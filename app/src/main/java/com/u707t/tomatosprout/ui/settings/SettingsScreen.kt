@@ -46,6 +46,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.u707t.tomatosprout.BuildConfig
 import com.u707t.tomatosprout.domain.ThemeMode
+import com.u707t.tomatosprout.notify.HyperOsFocus
 import com.u707t.tomatosprout.notify.LiveActivityStatus
 import com.u707t.tomatosprout.ui.components.ConfirmDialog
 import com.u707t.tomatosprout.ui.components.GroupDivider
@@ -185,10 +186,23 @@ fun SettingsScreen(
                     GroupDivider()
                     // 从系统设置页回来时要重新读一次授权状态，所以挂在 resume 上
                     var liveActivity by remember {
-                        mutableStateOf(LiveActivityStatus.describe(context, settings.liveActivityEnabled))
+                        mutableStateOf(
+                            LiveActivityStatus.describe(
+                                context,
+                                settings.liveActivityEnabled,
+                                settings.forceFocusNotification,
+                            ),
+                        )
                     }
-                    LifecycleResumeEffect(settings.liveActivityEnabled) {
-                        liveActivity = LiveActivityStatus.describe(context, settings.liveActivityEnabled)
+                    LifecycleResumeEffect(
+                        settings.liveActivityEnabled,
+                        settings.forceFocusNotification,
+                    ) {
+                        liveActivity = LiveActivityStatus.describe(
+                            context,
+                            settings.liveActivityEnabled,
+                            settings.forceFocusNotification,
+                        )
                         onPauseOrDispose { }
                     }
                     SwitchRow(
@@ -203,6 +217,15 @@ fun SettingsScreen(
                         subtitle = liveActivity.summary,
                         onClick = { showLiveActivity = true },
                     )
+                    if (HyperOsFocus.isXiaomiDevice()) {
+                        GroupDivider()
+                        SwitchRow(
+                            "强制焦点通知",
+                            "无视机型与焦点开关探测，始终附带焦点通知参数。装了白名单解锁模块、或系统把开关读成关闭时打开",
+                            settings.forceFocusNotification,
+                            viewModel::setForceFocus,
+                        )
+                    }
                     GroupDivider()
                     SwitchRow("免打扰时段", "该时段内不发送提醒", settings.dndEnabled, viewModel::setDnd)
                     if (settings.dndEnabled) {

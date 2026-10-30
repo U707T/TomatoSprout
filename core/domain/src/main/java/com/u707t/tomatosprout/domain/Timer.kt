@@ -43,6 +43,10 @@ sealed interface PauseResult {
 }
 
 object TimerEngine {
+
+    /** 计划时长上限：3 小时，与设置里的范围一致。 */
+    const val MAX_PLANNED_SECONDS = 10_800
+
     fun start(
         mode: TimerMode,
         plannedSeconds: Int,
@@ -53,7 +57,7 @@ object TimerEngine {
     ): TimerState = TimerState(
         mode = mode,
         phase = TimerPhase.RUNNING,
-        plannedSeconds = plannedSeconds.coerceIn(60, 10_800),
+        plannedSeconds = plannedSeconds.coerceIn(60, MAX_PLANNED_SECONDS),
         accumulatedMillis = 0L,
         runningSince = nowMono,
         startedAtEpoch = nowEpoch,
@@ -81,6 +85,20 @@ object TimerEngine {
             )
             else -> PauseResult.NotRunning
         }
+    }
+
+    /**
+     * 延长倒计时（通知上的「+5 分钟」）。
+     *
+     * 只对进行中的倒计时有效：正计时没有终点，暂停/已结束的计时延长了也不会继续走。
+     * 上限与 [start] 一致（3 小时），避免误触连点把计划时长顶到离谱的值。
+     */
+    fun extend(state: TimerState, additionalSeconds: Int): TimerState {
+        if (state.mode != TimerMode.COUNTDOWN || !state.isActive) return state
+        if (additionalSeconds <= 0) return state
+        val planned = (state.plannedSeconds + additionalSeconds).coerceAtMost(MAX_PLANNED_SECONDS)
+        if (planned == state.plannedSeconds) return state
+        return state.copy(plannedSeconds = planned)
     }
 
     /** 结算当前计时；返回的状态为 FINISHED，保留真实流逝时长。 */

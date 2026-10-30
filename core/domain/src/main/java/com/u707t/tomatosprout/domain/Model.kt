@@ -161,6 +161,11 @@ data class AppSettings(
     val notificationsEnabled: Boolean = true,
     /** 专注时是否使用系统实时活动 / 澎湃 OS 超级岛；仅本机生效，不参与同步与备份。 */
     val liveActivityEnabled: Boolean = true,
+    /**
+     * 强制发送澎湃 OS 焦点通知，无视机型与焦点开关探测。
+     * 给装了白名单解锁模块 / 系统把开关读成关闭的用户用；仅本机生效。
+     */
+    val forceFocusNotification: Boolean = false,
     val dndEnabled: Boolean = false,
     val dndStart: String = "22:00",
     val dndEnd: String = "07:00",

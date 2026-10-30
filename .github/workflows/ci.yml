@@ -100,8 +100,11 @@ jobs:
           VERSION=$(sed -n 's/^ *versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -1)
           [ -n "$VERSION" ] || { echo "::error::无法解析 versionName"; exit 1; }
           TAG="v$VERSION"
+          # 只取 CHANGELOG 最上面一节做发布说明，别把整个版本历史塞进 Release
+          awk '/^## /{c++} c==2{exit} c==1{print}' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then cp CHANGELOG.md RELEASE_NOTES.md; fi
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" apks/*.apk --clobber
           else
-            gh release create "$TAG" apks/*.apk --title "番茄芽 $TAG" --notes-file CHANGELOG.md
+            gh release create "$TAG" apks/*.apk --title "番茄芽 $TAG" --notes-file RELEASE_NOTES.md
           fi

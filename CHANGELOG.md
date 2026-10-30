@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.11.0 — 澎湃 OS 4 超级岛：载荷重写与岛内基础功能
+
+- **按官方文档重写 `miui.focus.param`**：`param_v2` 单层结构、`sequence` 必带、`filterWhenNoPermission=false`、`baseInfo` 里也带 `timerInfo`（通知卡片也能自己走秒），字段与单位对齐《开发指南》pId=2131 与《常见 Q&A》pId=2146
+- **岛属性按真实语义给值**：`islandProperty=1`（信息展示）、`islandPriority=1`（0 高 / 1 中 / 2 低，2 还会限制点击展开）、`expandedTime=60`（浮现 60 秒收回，与系统时钟倒计时一致）、完成帧 `dismissIsland=true`
+- **彻底移除「探测当闸门」**：`notification_focus_protocol` 与 `canShowFocus` 只进自检面板，不再决定是否发送 —— 澎湃 OS 4 上协议键可能整个缺失、开关会被云端白名单挡成 false，拿它当闸门就是把上岛的路关死；判定收敛为「小米机型（或强制开关）就带 extras，显示交给系统」
+- **删除无效的系统属性反射**：`persist.sys.feature.island` 在 Android 9+ 属非 SDK 接口，应用侧读不到，原探测是死代码
+- **新增「延长 5 分钟」**：通知栏动作 + `TimerEngine.extend()`（只对进行中的倒计时生效、上限 3 小时、不清空已流逝时长）
+- **按钮改广播**：暂停 / 继续 / 结束 / 延长全部走 `FocusActionReceiver`（`FLAG_RECEIVER_FOREGROUND`），点了不再把 App 拽到前台；顺带避开 Android 12+ 的通知 trampoline 限制
+- **完成提示上岛**：专注完成 / 休息结束发一条独立 id（1004）的一次性焦点通知，20 秒后自动消失，不覆盖进行中的专注；新的一轮开始时自动清掉上一条
+- **测试岛独立 id**（1003）：不再打断真实专注；发送失败会提示「系统拒绝了这条通知」
+- **自检升级**：新增本次档位与判定原因、强制开关状态，并按机型 / 协议 / 开关组合给出下一步（白名单未收录、需要系统模块解锁等）
+- **测试**：domain 54（新增 3 个 `extend` 用例）、app 21（载荷用例锁定 `islandProperty/islandPriority/expandedTime/dismissIsland/timerInfo`）；`:app:lintDebug` 0 error、`:app:assembleDebug` 通过
+- **文档**：新增 `docs/v1.11.0-澎湃OS4超级岛.md`（证据来源、载荷全字段、判定策略、排查步骤）
+
 ## v1.10.1 — 修复超级岛完全不出岛
 
 - **根因**：v1.10.0 用「焦点协议 ≥ 2 且 `canShowFocus` 为真」当发送闸门，而协议值是 `Settings.System` 读出来的，
