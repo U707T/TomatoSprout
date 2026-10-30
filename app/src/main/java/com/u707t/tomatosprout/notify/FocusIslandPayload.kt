@@ -75,6 +75,12 @@ internal object FocusIslandPayload {
     /** 完成态用更稳的深绿。 */
     const val ACCENT_DONE = "#3E8E5A"
 
+    /** 次级文字：状态、说明行。 */
+    const val SUBTLE = "#8A8078"
+
+    /** 次级文字（深色模式）。 */
+    const val SUBTLE_DARK = "#B9AFA8"
+
     /** 岛内进度条的刻度总量（系统按百分比读）。 */
     const val PROGRESS_MAX = 100
 
@@ -169,6 +175,20 @@ internal object FocusIslandPayload {
         input.countUp -> "正计时 · " + clock(input)
         else -> "专注中 · " + remainingLabel(input)
     }
+
+    /** 卡片标题：进行中是任务名，结束时是「专注完成 · 任务名」。 */
+    fun cardTitle(input: FocusIslandInput): String =
+        if (input.finished) headline(input) else shortName(input)
+
+    /** 卡片正文：剩余 / 已专注的读数，不含秒表（秒表交给系统计时器）。 */
+    fun reading(input: FocusIslandInput): String = when {
+        input.finished -> "${minutesOf(input)} 分钟"
+        input.countUp -> "已专注 " + clock(input)
+        else -> "剩余 " + clock(input)
+    }
+
+    /** 计划时长，例如 `25 分钟`。 */
+    fun plannedLabel(input: FocusIslandInput): String = "${minutesOf(input)} 分钟"
 
     /** 焦点通知展开态的正文：任务名 + 计划/已专注时长。 */
     fun detail(input: FocusIslandInput): String {
@@ -282,12 +302,21 @@ internal object FocusIslandPayload {
      * 多给一份能让通知栏卡片也带上系统自走的读数；系统不读这个键时只是忽略。
      */
     private fun baseInfo(input: FocusIslandInput, accent: String): JsonObject = buildJsonObject {
+        // 官方 BaseInfo 有四个文本槽：标题 / 副标题 / 正文 / 补充。
+        // 之前只用了两个，卡片看起来像一行流水账；这里按「任务名 → 状态 → 读数 → 时长」排
         put("type", 2)
-        put("title", headline(input))
-        put("content", detail(input))
-        put("subContent", shortName(input))
+        put("title", cardTitle(input))
+        put("subTitle", statusLabel(input))
+        put("content", reading(input))
+        put("subContent", plannedLabel(input))
         put("colorTitle", accent)
         put("colorTitleDark", accent)
+        put("colorSubTitle", SUBTLE)
+        put("colorSubTitleDark", SUBTLE_DARK)
+        put("colorContent", SUBTLE)
+        put("colorContentDark", SUBTLE_DARK)
+        put("colorSubContent", SUBTLE)
+        put("colorSubContentDark", SUBTLE_DARK)
         put("showDivider", false)
         timerInfo(input)?.let { put("timerInfo", it) }
     }
@@ -309,8 +338,9 @@ internal object FocusIslandPayload {
                 put("type", 1)
                 put("picInfo", picInfo())
                 put("textInfo", buildJsonObject {
-                    put("title", statusLabel(input))
-                    put("content", shortName(input))
+                    // A 区只有约 4 个汉字宽：第一行放任务名（用户最关心的），第二行放状态
+                    put("title", if (input.finished) statusLabel(input) else shortName(input))
+                    put("content", statusLabel(input))
                     put("showHighlightColor", true)
                     put("narrowFont", false)
                 })

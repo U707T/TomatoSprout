@@ -77,8 +77,11 @@ class FocusIslandPayloadTest {
         // 焦点通知展开态的主内容：没有 baseInfo，通知只能显示成普通样式
         val base = v2.obj("baseInfo")
         assertEquals(2, base.int("type"))
-        assertEquals("专注中 · 写周报", base.str("title"))
-        assertTrue(base.str("content").contains("写周报"))
+        // 四行结构：任务名 → 状态 → 读数 → 时长
+        assertEquals("写周报", base.str("title"))
+        assertEquals("专注中", base.str("subTitle"))
+        assertEquals("剩余 15:00", base.str("content"))
+        assertEquals("25 分钟", base.str("subContent"))
         // 状态栏与息屏图标
         assertEquals(FocusIslandPayload.PIC_MAIN, v2.str("tickerPic"))
         assertEquals(FocusIslandPayload.PIC_MAIN, v2.str("aodPic"))
@@ -138,7 +141,10 @@ class FocusIslandPayloadTest {
         assertEquals(now, digit.obj("timerInfo").long("timerSystemCurrent"))
         assertEquals("15:00", digit.str("digit"))
         assertEquals("已暂停", digit.str("content"))
-        assertEquals("已暂停", island.obj("bigIslandArea", "imageTextInfoLeft", "textInfo").str("title"))
+        // 大岛 A 区第一行是任务名、第二行是状态（4 个汉字宽，顺序不能反）
+        val left = island.obj("bigIslandArea", "imageTextInfoLeft", "textInfo")
+        assertEquals("写周报", left.str("title"))
+        assertEquals("已暂停", left.str("content"))
     }
 
     @Test

@@ -5,6 +5,9 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
@@ -37,6 +40,14 @@ internal class FocusLiveNotification(private val context: Context) {
         /** 本次档位的判定原因，写进自检面板。 */
         val reason: String,
     )
+
+    /** 岛与通知共用的一枚彩色图标（256px，纸雕插画裁成圆形）。 */
+    private val islandIcon: Icon by lazy { Icon.createWithResource(context, R.drawable.ic_island) }
+
+    /** 通知卡片的大图标，系统会自己按密度缩放。 */
+    private val islandBitmap: Bitmap by lazy {
+        BitmapFactory.decodeResource(context.resources, R.drawable.ic_island)
+    }
 
     fun build(
         state: TimerState,
@@ -74,10 +85,14 @@ internal class FocusLiveNotification(private val context: Context) {
         val builder = baseBuilder(state, input, clockText)
         when (decision.surface) {
             LiveSurface.HYPER_OS -> builder.addExtras(hypeOsExtras(input))
-            LiveSurface.LIVE_UPDATE -> applyPromotion(builder, input)
+            LiveSurface.LIVE_UPDATE -> {
+                applyProgressStyle(builder, input)
+                applyPromotion(builder, input)
+            }
             LiveSurface.PLAIN -> {
                 val views = remoteViews(input, clockText, paused)
                 builder.setCustomContentView(views).setCustomBigContentView(views)
+                builder.setProgress(FocusIslandPayload.PROGRESS_MAX, FocusIslandPayload.progress(input), false)
             }
         }
 
@@ -123,6 +138,8 @@ internal class FocusLiveNotification(private val context: Context) {
         )
         val builder = Notification.Builder(context, NotificationChannels.CHANNEL_FOCUS)
             .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(islandBitmap)
+            .setColor(Color.parseColor(FocusIslandPayload.accentFor(isBreak, finished = true)))
             .setContentTitle(if (isBreak) "休息结束" else "专注完成 · $safeMinutes 分钟")
             .setContentText(if (isBreak) "准备下一段专注吧" else "$title 已记录")
             .setOngoing(false)
@@ -146,16 +163,17 @@ internal class FocusLiveNotification(private val context: Context) {
         val running = state.phase == TimerPhase.RUNNING
         val paused = state.phase == TimerPhase.PAUSED
         val countUp = state.mode == TimerMode.COUNTUP
-        // 计时器已经交给系统走秒，正文只写「何时结束 / 何时开始」这类不会过期的信息
-        val content = when {
-            paused -> "已暂停 · 剩余 $clockText"
-            countUp -> input.startEpochMillis?.let { "开始于 ${wallClock(it)}" } ?: "正计时中"
-            else -> input.endEpochMillis?.let { "${wallClock(it)} 结束" } ?: "倒计时中"
-        }
+        val accent = FocusIslandPayload.accentFor(input.isBreak, input.finished)
         val builder = Notification.Builder(context, NotificationChannels.CHANNEL_FOCUS)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(FocusIslandPayload.headline(input))
-            .setContentText(content)
+            // 卡片左侧的大图标：番茄芽的纸雕插画，比一个白色小 glyph 好看得多
+            .setLargeIcon(islandBitmap)
+            // 强调色会染小图标、应用名与进度条
+            .setColor(Color.parseColor(accent))
+            // 标题放任务名（用户最关心的），状态进 subText，读数进正文
+            .setContentTitle(FocusIslandPayload.cardTitle(input))
+            .setSubText(FocusIslandPayload.statusLabel(input))
+            .setContentText(bodyText(input, clockText))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setAutoCancel(false)
@@ -187,6 +205,28 @@ internal class FocusLiveNotification(private val context: Context) {
     }
 
     /**
+     * 官方允许实时更新使用的样式之一：进度样式。
+     *
+     * 给卡片一条带强调色的进度条，比纯文字更像「正在进行的事」；
+     * 进度按已专注百分比算，暂停时停在原地。
+     */
+    private fun applyProgressStyle(builder: Notification.Builder, input: FocusIslandInput) {
+        if (Build.VERSION.SDK_INT < 36) return
+        runCatching {
+            val accent = Color.parseColor(
+                FocusIslandPayload.accentFor(input.isBreak, input.finished),
+            )
+            val segment = Notification.ProgressStyle.Segment(FocusIslandPayload.PROGRESS_MAX)
+                .setColor(accent)
+            val style = Notification.ProgressStyle()
+                .setStyledByProgress(true)
+                .setProgressSegments(listOf(segment))
+                .setProgress(FocusIslandPayload.progress(input))
+            builder.setStyle(style)
+        }
+    }
+
+    /**
      * 请求把这条通知提升为「实时更新」——澎湃 OS 4 的超级岛就是按这条通道渲染的。
      *
      * 两个键直接写进 extras，而不是调 `setShortCriticalText()` / `setRequestPromotedOngoing()`：
@@ -203,34 +243,34 @@ internal class FocusLiveNotification(private val context: Context) {
         if (Build.VERSION.SDK_INT < 36) return
         runCatching {
             val extras = builder.extras
-            extras.putCharSequence(EXTRA_SHORT_CRITICAL_TEXT, chipText(input))
+            chipText(input)?.let { extras.putCharSequence(EXTRA_SHORT_CRITICAL_TEXT, it) }
             extras.putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true)
         }
     }
 
     /**
-     * 状态栏胶囊 / 岛上的短文案。
+     * 状态栏胶囊 / 岛上的短文案；返回 null 表示「交给系统自己显示」。
      *
-     * 不放秒：实时活动档位 10 秒才补一帧，秒数会看起来卡住；
-     * 秒表式的读数交给 `setUsesChronometer` 与岛上的 `timerInfo`，由系统自己走。
+     * 倒计时剩余 2 小时内不写文案：系统会按 `setWhen + chronometer` 在胶囊里走实时倒计时，
+     * 比每 10 秒才刷新一次的静态文字直观得多（这也是系统时钟倒计时的做法）。
+     * 超过 2 小时系统会退回显示完整标题、把胶囊撑破，所以那时改用紧凑文案。
+     * 暂停 / 正计时 / 完成一律给静态文案。
      */
-    private fun chipText(input: FocusIslandInput): String {
+    private fun chipText(input: FocusIslandInput): CharSequence? {
         val minutes = (input.remainingSeconds.coerceAtLeast(0) + 59) / 60
         return when {
             input.finished -> "已完成"
             input.paused -> "已暂停"
             input.countUp -> "已专注 " + FocusIslandPayload.formatClock(input.elapsedSeconds)
             input.isBreak -> "休息 $minutes 分"
+            input.remainingSeconds <= CHIP_COUNTDOWN_SECONDS -> null
             else -> "剩 $minutes 分"
         }
     }
 
     private fun hypeOsExtras(input: FocusIslandInput, withActions: Boolean = true): Bundle {
         val pics = Bundle().apply {
-            putParcelable(
-                FocusIslandPayload.PIC_MAIN,
-                Icon.createWithResource(context, R.drawable.ic_notification),
-            )
+            putParcelable(FocusIslandPayload.PIC_MAIN, islandIcon)
         }
         return Bundle().apply {
             putString(EXTRA_FOCUS_PARAM, FocusIslandPayload.build(input).toString())
@@ -248,6 +288,23 @@ internal class FocusLiveNotification(private val context: Context) {
         }
     }
 
+    /**
+     * 通知正文：一句话说清「还剩多久 / 什么时候结束」。
+     *
+     * 秒表读数由系统的 chronometer 与岛上的 timerInfo 自己走，正文只补它们给不了的信息
+     * （结束时刻、已专注多久），所以 10 秒才刷新一次也不会显得卡。
+     */
+    private fun bodyText(input: FocusIslandInput, clockText: String): String = when {
+        input.finished -> FocusIslandPayload.reading(input) + " · 已记录"
+        input.paused -> "已暂停 · 剩余 $clockText"
+        input.countUp -> input.startEpochMillis
+            ?.let { "已专注 $clockText · ${wallClock(it)} 开始" }
+            ?: "已专注 $clockText"
+        else -> input.endEpochMillis
+            ?.let { "剩余 $clockText · ${wallClock(it)} 结束" }
+            ?: "剩余 $clockText"
+    }
+
     /** 通知正文里的墙钟时间，例如 `15:24`。 */
     private fun wallClock(epochMillis: Long): String = runCatching {
         java.time.Instant.ofEpochMilli(epochMillis)
@@ -257,7 +314,7 @@ internal class FocusLiveNotification(private val context: Context) {
 
     private fun remoteViews(input: FocusIslandInput, clockText: String, paused: Boolean): RemoteViews =
         RemoteViews(context.packageName, R.layout.notification_focus).apply {
-            setTextViewText(R.id.focus_title, FocusIslandPayload.headline(input))
+            setTextViewText(R.id.focus_title, FocusIslandPayload.cardTitle(input))
             setTextViewText(R.id.focus_time, clockText)
             setProgressBar(R.id.focus_progress, 100, FocusIslandPayload.progress(input), false)
             setImageViewResource(
@@ -329,5 +386,8 @@ internal class FocusLiveNotification(private val context: Context) {
 
         /** 实时更新：请求把通知提升为 promoted ongoing。 */
         const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
+
+        /** 这段剩余时间内不给胶囊文案，交给系统的实时倒计时（超过 2 小时胶囊会溢出）。 */
+        const val CHIP_COUNTDOWN_SECONDS = 2 * 3600
     }
 }
