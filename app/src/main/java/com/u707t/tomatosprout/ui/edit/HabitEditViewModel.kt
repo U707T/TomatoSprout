@@ -84,8 +84,8 @@ class HabitEditViewModel @Inject constructor(
         loading = false,
         saving = false,
         error = null,
-        // 已存在任务的子任务是即时落库的，不算「未保存」
-        subtasks = emptyList(),
+        // 已存在任务的子任务是即时落库的，不算「未保存」；新任务的子任务还是草稿，要算
+        subtasks = if (state.isNew) state.subtasks else emptyList(),
     )
 
     /** 有未保存修改时，返回要先问一句。 */

@@ -36,9 +36,27 @@ internal const val UNDO_WINDOW_MS = 10_000L
 internal class UndoBarState(
     val message: String,
     val actionLabel: String,
-    val onAction: () -> Unit,
-    val onExpire: () -> Unit,
-)
+    private val onAction: () -> Unit,
+    private val onExpire: () -> Unit,
+    /** 关联的任务；用户对同一任务又有新动作时，用它来撤掉过期的撤销条。 */
+    val taskId: String? = null,
+) {
+    private var consumed = false
+
+    /** 点「撤销/恢复」。与到期回调互斥，谁先到算谁。 */
+    fun action() {
+        if (consumed) return
+        consumed = true
+        onAction()
+    }
+
+    /** 窗口结束（或被下一条替换）。与点击互斥。 */
+    fun expire() {
+        if (consumed) return
+        consumed = true
+        onExpire()
+    }
+}
 
 
 /**

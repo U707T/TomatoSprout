@@ -73,6 +73,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -221,12 +222,12 @@ fun TodoScreen(
      */
     fun pushUndo(bar: UndoBarState) {
         undoJob?.cancel()
-        undoBar?.let { previous -> previous.onExpire() }
+        undoBar?.let { previous -> previous.expire() }
         undoBar = bar
         undoJob = scope.launch {
             delay(UNDO_WINDOW_MS)
             if (undoBar === bar) {
-                bar.onExpire()
+                bar.expire()
                 undoBar = null
             }
         }
@@ -236,7 +237,7 @@ fun TodoScreen(
         val bar = undoBar ?: return
         undoJob?.cancel()
         undoBar = null
-        bar.onAction()
+        bar.action()
     }
 
     fun handleCheck(card: TodoCardUi) {
@@ -256,10 +257,16 @@ fun TodoScreen(
                             viewModel.toggleCheckIn(card.task)
                         },
                         onExpire = {},
+                        taskId = card.task.id,
                     ),
                 )
             }
             return
+        }
+        // 用户又手动打卡了：先清掉同一任务的撤销条，避免「恢复」把这次新打卡又 toggle 掉
+        if (undoBar?.taskId == card.task.id) {
+            undoJob?.cancel()
+            undoBar = null
         }
         feedback?.confirm()
         viewModel.toggleCheckIn(card.task)
@@ -297,6 +304,7 @@ fun TodoScreen(
                     viewModel.delete(task, announce = false)
                     hiddenTaskId = null
                 },
+                taskId = task.id,
             ),
         )
         hiddenTaskId = task.id
@@ -905,7 +913,11 @@ private fun SearchField(
     onClose: () -> Unit,
 ) {
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    LaunchedEffect(Unit) {
+        // LazyColumn 首次组合时焦点节点可能还没挂上，等一帧再请求，失败也不该崩
+        withFrameNanos { }
+        runCatching { focusRequester.requestFocus() }
+    }
     Surface(
         shape = RoundedCornerShape(Radii.sm),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),

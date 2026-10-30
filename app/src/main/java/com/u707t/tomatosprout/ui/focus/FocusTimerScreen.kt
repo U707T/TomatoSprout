@@ -279,8 +279,10 @@ fun FocusTimerScreen(
     var taskMenu by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
 
-    // 计时进行中，系统返回键先问一句：收起 / 结束 / 继续
-    BackHandler(enabled = timer != null) { leaveConfirm = true }
+    // 计时进行中（且没有结算/停止弹窗）时，系统返回键先问一句：收起 / 结束 / 继续
+    BackHandler(enabled = timer != null && ui.summary == null && ui.stopConfirm == null) {
+        leaveConfirm = true
+    }
 
     Box(
         Modifier
@@ -304,7 +306,13 @@ fun FocusTimerScreen(
             FocusTopBar(
                 immersive = ui.immersive,
                 keepScreenOn = ui.keepScreenOn,
-                onBack = { if (timer != null) leaveConfirm = true else onExit() },
+                onBack = {
+                    if (timer != null && ui.summary == null && ui.stopConfirm == null) {
+                        leaveConfirm = true
+                    } else {
+                        onExit()
+                    }
+                },
                 onToggleImmersive = viewModel::toggleImmersive,
                 onToggleKeepScreenOn = { viewModel.setKeepScreenOn(!ui.keepScreenOn) },
                 onShare = {

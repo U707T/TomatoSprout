@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -101,6 +100,8 @@ class TodoViewModel @Inject constructor(
         quickId,
         refreshTick,
     ) { allTasks, stat, allSubTasks, selectedId, _ ->
+        // 用 runCatching 而不是 .catch：catch 会让整条 flow 终止，出错后「重试」就再也不会恢复
+        runCatching {
         val zone = ZoneId.systemDefault()
         val today = stat.today
         val visible = allTasks.filter { it.deletedAt == null && it.parentId == null }
@@ -184,8 +185,8 @@ class TodoViewModel @Inject constructor(
                 )
             },
         )
+        }.getOrElse { TodoUiState(loading = false, error = it.message ?: "任务列表加载失败") }
     }.flowOn(Dispatchers.Default)
-        .catch { emit(TodoUiState(loading = false, error = it.message ?: "任务列表加载失败")) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodoUiState())
 
     fun refresh() {
