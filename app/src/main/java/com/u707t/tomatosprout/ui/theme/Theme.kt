@@ -7,6 +7,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -96,8 +97,29 @@ private val AppShapes = Shapes(
     extraLarge = RoundedCornerShape(Radii.sheet),
 )
 
+/**
+ * 把强调色套进固定的纸面配色。
+ *
+ * 只覆盖 primary 一组角色：纸面、墨色、语义色都不跟着主题色走，
+ * 这样切色不会破坏「暖白纸 + 细描边」的整体气质。
+ */
+private fun ColorScheme.withAccent(accent: AccentTheme, dark: Boolean): ColorScheme {
+    val role = accent.role(dark)
+    return copy(
+        primary = role.primaryColor(),
+        onPrimary = role.onPrimaryColor(),
+        primaryContainer = role.primaryContainerColor(),
+        onPrimaryContainer = role.onPrimaryContainerColor(),
+        inversePrimary = role.inversePrimaryColor(),
+    )
+}
+
 @Composable
-fun TomatoTheme(mode: ThemeMode, content: @Composable () -> Unit) {
+fun TomatoTheme(
+    mode: ThemeMode,
+    accent: AccentTheme = AccentTheme.DEFAULT,
+    content: @Composable () -> Unit,
+) {
     val dark = when (mode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
@@ -114,7 +136,7 @@ fun TomatoTheme(mode: ThemeMode, content: @Composable () -> Unit) {
         }
     }
     MaterialTheme(
-        colorScheme = if (dark) DarkColors else LightColors,
+        colorScheme = (if (dark) DarkColors else LightColors).withAccent(accent, dark),
         typography = AppTypography,
         shapes = AppShapes,
         content = content,

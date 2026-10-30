@@ -1,5 +1,7 @@
 package com.u707t.tomatosprout.ui.tasks
 
+import android.app.TimePickerDialog
+import android.content.Context
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
@@ -29,12 +31,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,7 +52,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +73,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +87,7 @@ import com.u707t.tomatosprout.domain.Task
 import com.u707t.tomatosprout.domain.TaskStatus
 import com.u707t.tomatosprout.domain.TaskType
 import com.u707t.tomatosprout.ui.components.ConfirmDialog
+import com.u707t.tomatosprout.ui.components.AppBottomSheet
 import com.u707t.tomatosprout.ui.components.FilterPill
 import com.u707t.tomatosprout.ui.components.IllustrationEmptyState
 import com.u707t.tomatosprout.ui.components.LargeHeader
@@ -83,8 +97,12 @@ import com.u707t.tomatosprout.ui.components.ThinProgress
 import com.u707t.tomatosprout.ui.components.greetingFor
 import com.u707t.tomatosprout.ui.feedback.LocalFeedback
 import com.u707t.tomatosprout.ui.components.showUndo
+import com.u707t.tomatosprout.ui.theme.Motion
 import com.u707t.tomatosprout.ui.theme.Radii
+import com.u707t.tomatosprout.ui.theme.Sizes
 import com.u707t.tomatosprout.ui.theme.Space
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
@@ -99,6 +117,7 @@ private enum class TaskFilter(val label: String) {
 }
 
 private val weekdayNames = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+private val reminderPresets = listOf("08:00", "12:00", "18:00", "20:00", "22:00")
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -109,11 +128,13 @@ fun TodoScreen(
     onOpenHistory: (taskId: String?) -> Unit,
     onOpenStats: (taskId: String?) -> Unit,
     simpleMode: Boolean = false,
+    onSimpleModeChange: (Boolean) -> Unit = {},
     viewModel: TodoViewModel = hiltViewModel(),
     quickAddViewModel: QuickAddViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val addState by quickAddViewModel.state.collectAsStateWithLifecycle()
+    val sort by viewModel.sort.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val feedback = LocalFeedback.current
@@ -127,8 +148,19 @@ fun TodoScreen(
 
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var filterIndex by rememberSaveable { mutableIntStateOf(0) }
+    var showSort by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Task?>(null) }
     var pendingUncheck by remember { mutableStateOf<Task?>(null) }
+    // 滑动删除的「撤销窗口」：期间先把卡片藏起来，等提示条结束再真正写库
+    var pendingUndo by remember { mutableStateOf<Task?>(null) }
+    var deleteJob by remember { mutableStateOf<Job?>(null) }
+    var reminderTask by remember { mutableStateOf<Task?>(null) }
+    var reminderTime by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+
+    LaunchedEffect(reminderTask?.id) {
+        reminderTime = reminderTask?.let { viewModel.reminderTime(it.id) }
+    }
 
     LaunchedEffect(Unit) {
         quickAddViewModel.created.collect { task ->
@@ -144,14 +176,15 @@ fun TodoScreen(
     val today = ui.today
     val cards = ui.cards
     val filter = TaskFilter.entries[filterIndex.coerceIn(0, TaskFilter.entries.lastIndex)]
-    val visible = remember(cards, filter) {
-        when (filter) {
+    val visible = remember(cards, filter, sort, pendingUndo?.id) {
+        val filtered = when (filter) {
             TaskFilter.ALL -> cards
             TaskFilter.HABIT -> cards.filter { it.task.type == TaskType.HABIT }
             TaskFilter.TODO -> cards.filter { it.task.type == TaskType.TODO }
             TaskFilter.GOAL -> cards.filter { it.task.type == TaskType.GOAL }
             TaskFilter.POMODORO -> cards.filter { it.task.type == TaskType.POMODORO }
         }
+        sortCards(filtered, sort).filterNot { it.task.id == pendingUndo?.id }
     }
 
     val doneCount = cards.count { it.isDone || it.checkedToday }
@@ -180,7 +213,8 @@ fun TodoScreen(
                 feedback?.tap()
                 viewModel.toggleCheckIn(card.task)
                 scope.launch {
-                    if (snackbar.showUndo("已撤销「${card.task.title}」的打卡")) {
+                    // 这里撤销的是「撤销动作」本身，按钮文案说「恢复」才不会被误解成再撤销一次
+                    if (snackbar.showUndo("已撤销「${card.task.title}」的打卡", actionLabel = "恢复")) {
                         viewModel.toggleCheckIn(card.task)
                     }
                 }
@@ -189,6 +223,40 @@ fun TodoScreen(
         }
         feedback?.confirm()
         viewModel.toggleCheckIn(card.task)
+    }
+
+    fun handleAction(card: TodoCardUi) {
+        when {
+            card.isDone -> {
+                feedback?.tap()
+                viewModel.markDone(card.task, false)
+            }
+            card.isCountBased -> handleCheck(card)
+            else -> {
+                feedback?.confirm()
+                onStartTask(card.task)
+            }
+        }
+    }
+
+    /**
+     * 滑动删除：先隐藏 + 给 10 秒撤销窗口，提示条结束才真正写库。
+     * 这样「删错了」不需要从墓碑里恢复，也不会出现删了又弹一条「已删除」的双重提示。
+     */
+    fun deleteWithUndo(task: Task) {
+        feedback?.reject()
+        pendingUndo?.takeIf { it.id != task.id }?.let { viewModel.delete(it, announce = false) }
+        deleteJob?.cancel()
+        pendingUndo = task
+        deleteJob = scope.launch {
+            val undone = snackbar.showUndo("已删除「${task.title}」", actionLabel = "撤销")
+            if (undone) {
+                feedback?.tap()
+            } else {
+                viewModel.delete(task, announce = false)
+            }
+            if (pendingUndo?.id == task.id) pendingUndo = null
+        }
     }
 
     Scaffold(
@@ -202,6 +270,16 @@ fun TodoScreen(
                     else -> "还有 ${cards.size - doneCount} 件没完成，专注 $totalFocusMinutes 分钟"
                 },
                 trailing = {
+                    IconButton(onClick = {
+                        feedback?.tap()
+                        showSort = true
+                    }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.List,
+                            contentDescription = "排序与视图",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     IconButton(onClick = {
                         feedback?.tap()
                         onOpenHistory(null)
@@ -228,7 +306,7 @@ fun TodoScreen(
                 interactionSource = fabInteraction,
                 modifier = Modifier
                     .navigationBarsPadding()
-                    .padding(bottom = 66.dp)
+                    .padding(bottom = Sizes.bottomBar + Space.xs)
                     .graphicsLayer {
                         scaleX = fabScale
                         scaleY = fabScale
@@ -312,33 +390,212 @@ fun TodoScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            if (filter != TaskFilter.ALL) {
+                                Spacer(Modifier.height(Space.md))
+                                Surface(
+                                    onClick = {
+                                        feedback?.tap()
+                                        filterIndex = TaskFilter.ALL.ordinal
+                                    },
+                                    shape = RoundedCornerShape(Radii.sm),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                ) {
+                                    Text(
+                                        "看全部任务",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.sm),
+                                    )
+                                }
+                            }
                         }
                     }
                 } else {
                     items(visible, key = { it.task.id }) { card ->
-                        TaskCard(
+                        SwipeableTaskCard(
                             card = card,
                             simple = simpleMode,
                             modifier = Modifier.animateItem(),
                             onOpen = { onEditTask(card.task.id) },
                             onLongPress = { viewModel.showQuickActions(card.task.id) },
-                            onAction = {
-                                when {
-                                    card.isDone -> {
-                                        feedback?.tap()
-                                        viewModel.markDone(card.task, false)
-                                    }
-                                    card.isCountBased -> handleCheck(card)
-                                    else -> {
-                                        feedback?.confirm()
-                                        onStartTask(card.task)
-                                    }
-                                }
+                            onAction = { handleAction(card) },
+                            onSwipeCheck = {
+                                // 右滑只做「打卡 / 完成 / 重新打开」，绝不在滑动里启动计时
+                                feedback?.confirm()
+                                if (card.isDone) viewModel.markDone(card.task, false) else handleCheck(card)
                             },
+                            onSwipeDelete = { deleteWithUndo(card.task) },
                         )
                     }
                 }
             }
+        }
+    }
+
+    if (showSort) {
+        AppBottomSheet(onDismiss = { showSort = false }) {
+            Text("视图与排序", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(Space.xxs))
+            Text(
+                "排序只改展示顺序，不会打乱手动调好的位置",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(Space.sm))
+            TaskSort.entries.forEach { mode ->
+                val selected = mode == sort
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Radii.sm))
+                        .selectable(
+                            selected = selected,
+                            role = Role.RadioButton,
+                            onClick = {
+                                feedback?.tap()
+                                viewModel.setSort(mode)
+                            },
+                        )
+                        .padding(horizontal = Space.sm, vertical = Space.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(mode.label, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            mode.hint,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (selected) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = "当前排序",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(Space.sm))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = Space.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(end = Space.md)) {
+                    Text("简约卡片", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "只留标题、连续天数与完成状态",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = simpleMode,
+                    onCheckedChange = {
+                        feedback?.tap()
+                        onSimpleModeChange(it)
+                    },
+                )
+            }
+            Text(
+                "小提示：卡片右滑可直接打卡 / 完成，左滑删除并能在提示条里撤销。",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(Space.sm))
+        }
+    }
+
+    reminderTask?.let { task ->
+        AppBottomSheet(onDismiss = { reminderTask = null }) {
+            Text("提醒", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(Space.xxs))
+            Text(
+                task.title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(Space.lg))
+            Text(
+                "每天在这个时间提醒",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(Space.sm))
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                reminderPresets.forEach { time ->
+                    FilterPill(
+                        text = time,
+                        selected = reminderTime == time,
+                        onClick = {
+                            viewModel.setReminder(task, time)
+                            reminderTask = null
+                        },
+                    )
+                }
+            }
+            Spacer(Modifier.height(Space.md))
+            Surface(
+                onClick = {
+                    feedback?.tap()
+                    pickReminderTime(context, reminderTime ?: "20:00") { picked ->
+                        viewModel.setReminder(task, picked)
+                        reminderTask = null
+                    }
+                },
+                shape = RoundedCornerShape(Radii.sm),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    Modifier.padding(horizontal = Space.lg, vertical = Space.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("自定义时间", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Text(
+                        reminderTime ?: "未设置",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+            if (reminderTime != null) {
+                Spacer(Modifier.height(Space.sm))
+                TextButton(
+                    onClick = {
+                        feedback?.reject()
+                        viewModel.setReminder(task, null)
+                        reminderTask = null
+                    },
+                ) {
+                    Text("关闭提醒", color = MaterialTheme.colorScheme.error)
+                }
+            }
+            Spacer(Modifier.height(Space.md))
+            Text(
+                "提醒受「免打扰时段」约束，系统也可能推迟几分钟送达。",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(Space.sm))
         }
     }
 
@@ -377,7 +634,14 @@ fun TodoScreen(
             },
             onReminder = {
                 viewModel.dismissQuickActions()
-                onEditTask(quick.taskId)
+                // 等快捷面板的退场动画走完再开提醒弹层，避免两层遮罩叠在一起闪一下
+                val task = ui.cards.firstOrNull { it.task.id == quick.taskId }?.task
+                if (task != null) {
+                    scope.launch {
+                        delay(180)
+                        reminderTask = task
+                    }
+                }
             },
             onChangeColor = {
                 ui.cards.firstOrNull { it.task.id == quick.taskId }?.task?.let(viewModel::cycleColor)
@@ -457,6 +721,118 @@ private fun OverviewCard(
                 size = 44.dp,
                 stroke = 4.dp,
                 label = null,
+            )
+        }
+    }
+}
+
+/**
+ * 滑动外壳：右滑打卡 / 完成，左滑删除。
+ *
+ * `confirmValueChange` 一律返回 false —— 动作已经在回调里触发，卡片自己弹回原位，
+ * 不会留下「滑走一半卡住」或需要手动 reset 的状态。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableTaskCard(
+    card: TodoCardUi,
+    simple: Boolean,
+    onOpen: () -> Unit,
+    onLongPress: () -> Unit,
+    onAction: () -> Unit,
+    onSwipeCheck: () -> Unit,
+    onSwipeDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 计时任务右滑不启动专注：起计时必须是一次明确的点击
+    val checkEnabled = card.isCountBased || card.isDone
+    val state = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> if (checkEnabled) onSwipeCheck()
+                SwipeToDismissBoxValue.EndToStart -> onSwipeDelete()
+                SwipeToDismissBoxValue.Settled -> Unit
+            }
+            false
+        },
+        positionalThreshold = { distance -> distance * 0.32f },
+    )
+    SwipeToDismissBox(
+        state = state,
+        modifier = modifier,
+        enableDismissFromStartToEnd = checkEnabled,
+        enableDismissFromEndToStart = true,
+        backgroundContent = {
+            SwipeActionBackground(card = card, direction = state.dismissDirection)
+        },
+    ) {
+        TaskCard(
+            card = card,
+            simple = simple,
+            onOpen = onOpen,
+            onLongPress = onLongPress,
+            onAction = onAction,
+        )
+    }
+}
+
+/** 滑动时露出的底层：左打卡、右删除，颜色只用容器色，不抢卡片本身的注意力。 */
+@Composable
+private fun SwipeActionBackground(card: TodoCardUi, direction: SwipeToDismissBoxValue) {
+    val checkAlpha by animateFloatAsState(
+        targetValue = if (direction == SwipeToDismissBoxValue.StartToEnd) 1f else 0f,
+        animationSpec = tween(Motion.fast),
+        label = "swipeCheck",
+    )
+    val deleteAlpha by animateFloatAsState(
+        targetValue = if (direction == SwipeToDismissBoxValue.EndToStart) 1f else 0f,
+        animationSpec = tween(Motion.fast),
+        label = "swipeDelete",
+    )
+    Box(Modifier.fillMaxSize()) {
+        Row(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = checkAlpha }
+                .clip(RoundedCornerShape(Radii.md))
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .padding(horizontal = Space.lg),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(Space.sm))
+            Text(
+                if (card.isDone) "重新打开" else "完成 / 打卡",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+        Row(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = deleteAlpha }
+                .clip(RoundedCornerShape(Radii.md))
+                .background(MaterialTheme.colorScheme.errorContainer)
+                .padding(horizontal = Space.lg),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "删除",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Spacer(Modifier.width(Space.sm))
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(18.dp),
             )
         }
     }
@@ -655,3 +1031,15 @@ private fun TaskAction(card: TodoCardUi, accent: Color, onAction: () -> Unit) {
 }
 
 private val PaletteFallback = Color(0xFFE0553F)
+
+/** 提醒时间的系统选择器；默认值按 24 小时制。 */
+private fun pickReminderTime(context: Context, initial: String, onPick: (String) -> Unit) {
+    val parts = initial.split(":")
+    TimePickerDialog(
+        context,
+        { _, hour, minute -> onPick("%02d:%02d".format(hour, minute)) },
+        parts.getOrNull(0)?.toIntOrNull() ?: 20,
+        parts.getOrNull(1)?.toIntOrNull() ?: 0,
+        true,
+    ).show()
+}

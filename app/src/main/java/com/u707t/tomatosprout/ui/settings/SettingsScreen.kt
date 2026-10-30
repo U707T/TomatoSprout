@@ -4,6 +4,7 @@ import android.app.TimePickerDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,11 +17,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -37,7 +44,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,6 +65,7 @@ import com.u707t.tomatosprout.ui.components.SegmentedTabs
 import com.u707t.tomatosprout.ui.components.SettingGroup
 import com.u707t.tomatosprout.ui.components.SettingRow
 import com.u707t.tomatosprout.ui.feedback.LocalFeedback
+import com.u707t.tomatosprout.ui.theme.AccentTheme
 import com.u707t.tomatosprout.ui.theme.Radii
 import com.u707t.tomatosprout.ui.theme.Space
 import java.time.Instant
@@ -122,6 +133,20 @@ fun SettingsScreen(
                             options = listOf("跟随系统", "浅色", "深色"),
                             selectedIndex = modes.indexOf(settings.themeMode).coerceAtLeast(0),
                             onSelect = { viewModel.setTheme(modes[it]) },
+                        )
+                    }
+                    GroupDivider()
+                    Column(Modifier.padding(horizontal = Space.lg, vertical = Space.md)) {
+                        Text("主题色", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "只换按钮、链接与进度条的强调色，纸面底色保持暖白 / 暖炭灰",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(Space.md))
+                        AccentPicker(
+                            current = settings.accent,
+                            onSelect = viewModel::setAccent,
                         )
                     }
                     GroupDivider()
@@ -390,6 +415,63 @@ private fun ProfileCard() {
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun AccentPicker(current: String, onSelect: (String) -> Unit) {
+    val feedback = LocalFeedback.current
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        AccentTheme.entries.forEach { accent ->
+            val selected = accent.key == current
+            Column(
+                Modifier
+                    .widthIn(min = 48.dp)
+                    .clip(RoundedCornerShape(Radii.sm))
+                    .selectable(
+                        selected = selected,
+                        role = Role.RadioButton,
+                        onClick = {
+                            feedback?.tap()
+                            onSelect(accent.key)
+                        },
+                    )
+                    .padding(vertical = Space.xs),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(accent.swatch),
+                    )
+                    if (selected) {
+                        Box(
+                            Modifier
+                                .size(34.dp)
+                                .border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape),
+                        )
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(Space.xs))
+                Text(
+                    accent.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (selected) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

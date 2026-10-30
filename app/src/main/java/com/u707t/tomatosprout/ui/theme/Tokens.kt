@@ -80,6 +80,9 @@ object Sizes {
     val touch = 48.dp
     val icon = 22.dp
     val avatar = 44.dp
+
+    /** 底栏内容高度（不含系统手势区）。FAB 与列表底部留白都按它推导。 */
+    val bottomBar = 62.dp
 }
 
 // 兼容旧引用：其它文件仍然 import ui.theme.Tomato

@@ -49,6 +49,12 @@ class SettingsViewModel @Inject constructor(
     fun setSound(enabled: Boolean) = feedback.setSoundEnabled(enabled)
 
     fun setTheme(mode: ThemeMode) = update { it.copy(themeMode = mode) }
+
+    /** 主题色只影响按钮、链接与进度，不重建纸面配色。 */
+    fun setAccent(key: String) = update {
+        if (it.accent == key) it else it.copy(accent = key)
+    }
+
     fun setSimple(enabled: Boolean) = update { it.copy(simpleMode = enabled) }
     fun setNotifications(enabled: Boolean) = update { it.copy(notificationsEnabled = enabled) }
 

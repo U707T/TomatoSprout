@@ -157,6 +157,10 @@ data class WishItem(
 
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** 主题色 key（AccentTheme.key）。纯外观偏好，仅本机生效，不参与同步。 */
+    val accent: String = "tomato",
+    /** 首页排序方式：manual / priority / due / focus。仅本机生效。 */
+    val taskSort: String = "manual",
     val simpleMode: Boolean = false,
     val notificationsEnabled: Boolean = true,
     /** 专注时是否使用系统实时活动 / 澎湃 OS 超级岛；仅本机生效，不参与同步与备份。 */

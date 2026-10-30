@@ -286,7 +286,8 @@ fun Metric(
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 value,
-                style = MaterialTheme.typography.headlineSmall,
+                // 等宽数字：数值变化时相邻元素不会左右抖
+                style = MaterialTheme.typography.headlineSmall.copy(fontFeatureSettings = "tnum"),
                 color = tint,
                 fontSize = 22.sp,
             )
@@ -542,5 +543,6 @@ suspend fun SnackbarHostState.showUndo(message: String, actionLabel: String = "�
         message = message,
         actionLabel = actionLabel,
         withDismissAction = false,
-        duration = SnackbarDuration.Short,
+        // 撤销窗口给足 10 秒：4 秒在「刚删完还没反应过来」时基本来不及点
+        duration = SnackbarDuration.Long,
     ) == SnackbarResult.ActionPerformed

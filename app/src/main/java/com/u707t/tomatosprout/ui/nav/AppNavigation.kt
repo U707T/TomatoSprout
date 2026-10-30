@@ -11,6 +11,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -70,22 +72,33 @@ import com.u707t.tomatosprout.ui.settings.SyncLogsScreen
 import com.u707t.tomatosprout.ui.settings.WebDavScreen
 import com.u707t.tomatosprout.ui.stats.StatsScreen
 import com.u707t.tomatosprout.ui.tasks.TodoScreen
+import com.u707t.tomatosprout.ui.theme.AccentTheme
+import com.u707t.tomatosprout.ui.theme.Motion
+import com.u707t.tomatosprout.ui.theme.Sizes
 import com.u707t.tomatosprout.ui.theme.TomatoTheme
 import com.u707t.tomatosprout.ui.wishlist.WishlistScreen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
 
 @HiltViewModel
 class AppViewModel @Inject constructor(
-    settingsRepo: SettingsRepository,
+    private val settingsRepo: SettingsRepository,
     val feedback: FeedbackController,
 ) : ViewModel() {
     val settings: StateFlow<AppSettings> =
         settingsRepo.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
+
+    /** 首页「排序」弹层里可以顺手切换简约模式，不必绕到设置页。 */
+    fun setSimple(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepo.update { if (it.simpleMode == enabled) it else it.copy(simpleMode = enabled) }
+        }
+    }
 }
 
 @Composable
@@ -96,7 +109,10 @@ fun TomatoApp(
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     CompositionLocalProvider(LocalFeedback provides viewModel.feedback) {
-    TomatoTheme(settings.themeMode) {
+    TomatoTheme(
+        mode = settings.themeMode,
+        accent = AccentTheme.of(settings.accent),
+    ) {
         val nav = rememberNavController()
         val entry by nav.currentBackStackEntryAsState()
         val destination = entry?.destination
@@ -154,6 +170,7 @@ fun TomatoApp(
                             nav.navigate(StatsRoute(taskId = taskId, date = LocalDate.now().toString()))
                         },
                         simpleMode = settings.simpleMode,
+                        onSimpleModeChange = viewModel::setSimple,
                     )
                 }
                 composable<StatsRoute> {
@@ -312,7 +329,7 @@ private fun BottomBar(
                 Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .height(62.dp),
+                    .height(Sizes.bottomBar),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 items.forEach { tab ->
@@ -324,23 +341,27 @@ private fun BottomBar(
                     val tint by animateColorAsState(
                         targetValue = if (tab.selected) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
-                        animationSpec = tween(180),
+                        animationSpec = tween(Motion.fast),
                         label = "tabTint",
                     )
                     val pill by animateColorAsState(
                         targetValue = if (tab.selected) MaterialTheme.colorScheme.primaryContainer
                         else Color.Transparent,
-                        animationSpec = tween(180),
+                        animationSpec = tween(Motion.fast),
                         label = "tabPill",
                     )
                     Column(
                         Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .clickable {
-                                feedback?.tap()
-                                tab.onClick()
-                            },
+                            .selectable(
+                                selected = tab.selected,
+                                role = Role.Tab,
+                                onClick = {
+                                    feedback?.tap()
+                                    tab.onClick()
+                                },
+                            ),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
