@@ -74,7 +74,12 @@ class SettingsViewModel @Inject constructor(
             nowMono = nowMono,
             nowEpoch = System.currentTimeMillis(),
         )
-        val posted = live.postTest(state, nowMono, "番茄芽 · 岛测试")
+        val posted = live.postTest(
+            state = state,
+            nowMono = nowMono,
+            title = "番茄芽 · 岛测试",
+            forceFocus = settings.value.forceFocusNotification,
+        )
         messages.tryEmit(
             if (posted) "已发送测试岛，60 秒后自动消失" else "发送失败：系统拒绝了这条通知",
         )

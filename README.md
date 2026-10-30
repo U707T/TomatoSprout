@@ -2,7 +2,7 @@
 
 轻量打卡 + 番茄专注 + 数据回顾。原生 Android（Kotlin + Jetpack Compose），**不索权、不打扰、不空洞**。
 
-当前版本 **v1.11.0**（targetSdk 36）。只申请 5 个权限：`POST_NOTIFICATIONS`（可选）、`INTERNET`、`ACCESS_NETWORK_STATE`、`RECEIVE_BOOT_COMPLETED`（重启恢复本地提醒）、`VIBRATE`（触感反馈，普通权限，无运行时弹窗）。
+当前版本 **v1.12.0**（targetSdk 36）。只申请 6 个权限：`POST_NOTIFICATIONS`（可选）、`POST_PROMOTED_NOTIFICATIONS`（普通权限，澎湃 OS 4 的岛走实时更新需要）、`INTERNET`、`ACCESS_NETWORK_STATE`、`RECEIVE_BOOT_COMPLETED`（重启恢复本地提醒）、`VIBRATE`（触感反馈，普通权限，无运行时弹窗）。
 
 > 没有账号、没有托管后端、没有广告、没有埋点；没有使用情况监听、没有无障碍、没有悬浮窗、没有桌面小组件、没有前台服务常驻。
 
@@ -39,7 +39,7 @@
 - **后台校正**：基于单调时钟，回前台按真实流逝校正；进程被杀后从快照恢复。
 - **专注页**：全屏渐变背景 + 衬线引语 + 超大计时字；底部亮度 / 声音 / 开始暂停 / 重置 / 停止 5 个线性图标。
 - **环境辅助**：屏幕常亮、亮度调节、沉浸模式、6 种本地声音（白噪音 / 棕色噪音 / 树叶风声 / 篝火 / 钢琴 / 八音盒；白 / 棕噪音与风声为无缝循环）、分享海报。
-- **系统实时活动**：专注把倒计时交给系统自己走秒 —— 澎湃 OS 显示**超级岛 / 焦点通知**（小岛 + 大号倒计时 + 进度环 + 息屏文案 + 暂停/继续/结束/延长 5 分钟），Android 16+ 用 `Notification.ProgressStyle` 显示进度型通知并申请常驻提升，其余系统仍用自绘卡片；暂停 / 继续 / 结束在所有档位都能点。
+- **系统实时活动**：专注把倒计时交给系统自己走秒 —— 澎湃 OS 4 走 **Android 16 实时更新**（系统的岛直接渲染这条通知），OS3 及更早走**焦点通知 / 超级岛**（小岛 + 大号倒计时 + 进度环 + 息屏文案 + 暂停/继续/结束/延长 5 分钟），Android 16+ 用 `Notification.ProgressStyle` 显示进度型通知并申请常驻提升，其余系统仍用自绘卡片；暂停 / 继续 / 结束在所有档位都能点。
 
 ### 回顾
 
@@ -242,6 +242,7 @@
 | 权限 | 用途 | 可拒绝 |
 |---|---|---|
 | `POST_NOTIFICATIONS` | 习惯提醒 / 专注实时活动与通知卡片 | 是，静默降级 |
+| `POST_PROMOTED_NOTIFICATIONS` | 专注时把通知提升为「实时更新」（澎湃 OS 4 的岛按这条渲染） | 系统设置里可关，关掉只剩普通通知 |
 | `INTERNET` | 仅手动 WebDAV 同步 | — |
 | `ACCESS_NETWORK_STATE` | 仅 Wi-Fi 同步判断 | — |
 | `RECEIVE_BOOT_COMPLETED` | 重启后恢复本地提醒闹钟 | — |
@@ -294,7 +295,8 @@ export ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk
 
 详细设计说明与资源出处见 [docs/v1.9.0-UI重构说明.md](docs/v1.9.0-UI重构说明.md)；
 Android 16 / 超级岛适配见 [docs/v1.10.0-实时活动与超级岛.md](docs/v1.10.0-实时活动与超级岛.md)；
-澎湃 OS 4 的载荷重写与岛内基础功能见 [docs/v1.11.0-澎湃OS4超级岛.md](docs/v1.11.0-澎湃OS4超级岛.md)。
+澎湃 OS 4 的载荷重写与岛内基础功能见 [docs/v1.11.0-澎湃OS4超级岛.md](docs/v1.11.0-澎湃OS4超级岛.md)；
+澎湃 OS 4 走「实时更新」上岛的路径见 [docs/v1.12.0-实时更新上岛.md](docs/v1.12.0-实时更新上岛.md)。
 
 ---
 

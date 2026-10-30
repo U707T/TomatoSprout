@@ -74,7 +74,7 @@ internal class FocusLiveNotification(private val context: Context) {
         val builder = baseBuilder(state, input, clockText)
         when (decision.surface) {
             LiveSurface.HYPER_OS -> builder.addExtras(hypeOsExtras(input))
-            LiveSurface.LIVE_UPDATE -> applyLiveUpdate(builder, input, running)
+            LiveSurface.LIVE_UPDATE -> applyPromotion(builder, input)
             LiveSurface.PLAIN -> {
                 val views = remoteViews(input, clockText, paused)
                 builder.setCustomContentView(views).setCustomBigContentView(views)
@@ -186,26 +186,43 @@ internal class FocusLiveNotification(private val context: Context) {
         return builder
     }
 
-    private fun applyLiveUpdate(builder: Notification.Builder, input: FocusIslandInput, running: Boolean) {
+    /**
+     * 请求把这条通知提升为「实时更新」——澎湃 OS 4 的超级岛就是按这条通道渲染的。
+     *
+     * 两个键直接写进 extras，而不是调 `setShortCriticalText()` / `setRequestPromotedOngoing()`：
+     * 后者是 Android 16 QPR1（SDK_INT_FULL ≥ 3600001）才有的方法，而这两个 key 在 36.0 的
+     * SystemUI 里就已经被读取。参考实现 Live Clock 2.3.0 正是这么写的（它没有任何
+     * `miui.focus` 字样，却在澎湃 OS 4 上能出岛）。
+     *
+     * 官方对实时更新的硬性要求（缺一条就不会被提升）：清单里声明
+     * `POST_PROMOTED_NOTIFICATIONS`、`setOngoing(true)`、有 `contentTitle`、
+     * 没有 `setCustomContentView`、不是分组摘要、频道不是 `IMPORTANCE_MIN`。
+     * 本档位全部满足；自检面板会把「系统是否真的提升了」也显示出来。
+     */
+    private fun applyPromotion(builder: Notification.Builder, input: FocusIslandInput) {
         if (Build.VERSION.SDK_INT < 36) return
-        val segment = Notification.ProgressStyle.Segment(FocusIslandPayload.PROGRESS_MAX)
-            .setColor(android.graphics.Color.parseColor(FocusIslandPayload.accentFor(input.isBreak)))
-        val style = Notification.ProgressStyle()
-            .setStyledByProgress(true)
-            .setProgressSegments(listOf(segment))
-            .setProgress(FocusIslandPayload.progress(input))
-        builder.setStyle(style)
-        // 暂停时没有计时器可用，用一句短文案占住状态栏胶囊
-        if (!running) builder.setShortCriticalText("已暂停")
-        requestPromotion(builder)
+        runCatching {
+            val extras = builder.extras
+            extras.putCharSequence(EXTRA_SHORT_CRITICAL_TEXT, chipText(input))
+            extras.putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true)
+        }
     }
 
-    /** 提升为「常驻实时活动」需要系统允许；用户关掉时只是不提升，通知照常显示。 */
-    @SuppressLint("NewApi")
-    private fun requestPromotion(builder: Notification.Builder) {
-        // setRequestPromotedOngoing 是 Android 16 QPR1（SDK_INT_FULL 3600001）才有的接口
-        if (Build.VERSION.SDK_INT_FULL < Build.VERSION_CODES_FULL.BAKLAVA_1) return
-        runCatching { builder.setRequestPromotedOngoing(true) }
+    /**
+     * 状态栏胶囊 / 岛上的短文案。
+     *
+     * 不放秒：实时活动档位 10 秒才补一帧，秒数会看起来卡住；
+     * 秒表式的读数交给 `setUsesChronometer` 与岛上的 `timerInfo`，由系统自己走。
+     */
+    private fun chipText(input: FocusIslandInput): String {
+        val minutes = (input.remainingSeconds.coerceAtLeast(0) + 59) / 60
+        return when {
+            input.finished -> "已完成"
+            input.paused -> "已暂停"
+            input.countUp -> "已专注 " + FocusIslandPayload.formatClock(input.elapsedSeconds)
+            input.isBreak -> "休息 $minutes 分"
+            else -> "剩 $minutes 分"
+        }
     }
 
     private fun hypeOsExtras(input: FocusIslandInput, withActions: Boolean = true): Bundle {
@@ -306,5 +323,11 @@ internal class FocusLiveNotification(private val context: Context) {
 
         /** 动作 Bundle 的 extras key，键与 JSON 里的 `action` 字符串一一对应。 */
         const val EXTRA_FOCUS_ACTIONS = "miui.focus.actions"
+
+        /** 实时更新：状态栏胶囊里的短文案（Android 16 起 SystemUI 读取）。 */
+        const val EXTRA_SHORT_CRITICAL_TEXT = "android.shortCriticalText"
+
+        /** 实时更新：请求把通知提升为 promoted ongoing。 */
+        const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
     }
 }

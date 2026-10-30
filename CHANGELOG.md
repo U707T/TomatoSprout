@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.12.0 — 澎湃 OS 4 改走「实时更新」上岛（附参考实现逆向）
+
+- **现象**：v1.11.0 载荷写对后，通知栏有实时通知，超级岛仍没动静 —— 说明卡的不是参数，是通道
+- **逆向参考实现**：Live Clock 2.3.0（`com.platelet.liveclock`，minSdk 36）里**没有任何 `miui.focus` 字样**，也能在澎湃 OS 4 出岛；它只做了两件事：`android.shortCriticalText` + `android.requestPromotedOngoing`，走 Android 16 实时更新
+- **结论**：澎湃 OS 4 的岛渲染的是 **Android 16 实时更新（promoted ongoing notification）**，厂商焦点通知通道要过云端白名单，第三方基本没戏
+- **清单**：新增 `POST_PROMOTED_NOTIFICATIONS`（普通权限，无运行时弹窗；官方实时更新的硬性前提）
+- **通知**：实时更新档位改为直接写两个 extras（不调 36.1 才有的 `setRequestPromotedOngoing` / `setShortCriticalText`，36.0 的 SystemUI 同样读取），并去掉 `ProgressStyle` 回到标准样式
+- **档位判定**：Android 16+ 且允许提升 → 实时更新（OS4 默认）；OS3 及更早的小米机型 → 焦点通知参数；强制开关仍然优先；普通卡片只在都不满足时使用
+- **测试岛**：改为走和真实专注完全一样的档位（不再固定强制厂商参数），否则「自检通过、真实专注不上岛」
+- **自检**：新增「提升结果」——已提升为实时更新 / 未提升 / 当前没有专注通知，并按结果给出下一步（去系统里开「允许实时更新」或改用强制焦点通知）
+- **设置**：状态行与开关文案按新通道重写，说明 OS4 走实时更新、强制开关是给 OS3/白名单用户的
+- **验证**：domain 54、app 21 全绿；`:app:lintDebug` 0 error；`:app:assembleDebug` 通过
+- **文档**：新增 `docs/v1.12.0-实时更新上岛.md`（含参考实现的 smali 还原与官方硬性条件清单）
+
 ## v1.11.0 — 澎湃 OS 4 超级岛：载荷重写与岛内基础功能
 
 - **按官方文档重写 `miui.focus.param`**：`param_v2` 单层结构、`sequence` 必带、`filterWhenNoPermission=false`、`baseInfo` 里也带 `timerInfo`（通知卡片也能自己走秒），字段与单位对齐《开发指南》pId=2131 与《常见 Q&A》pId=2146

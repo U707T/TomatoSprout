@@ -62,10 +62,18 @@ class FocusLiveController @Inject constructor(@ApplicationContext private val co
 
     /**
      * 设置页的自检按钮：发一条独立 id 的假专注，60 秒后自己撤掉。
-     * 用独立 id 是为了不打断正在进行的真实专注；自检时强制走焦点通知。
+     * 用独立 id 是为了不打断正在进行的真实专注。
+     *
+     * 走**和真实专注完全一样**的档位（只跟用户的「强制焦点通知」开关走），
+     * 否则自检通过、真实专注不上岛，等于白测。
      */
     @SuppressLint("MissingPermission")
-    fun postTest(state: TimerState, nowMono: Long, title: String): Boolean {
+    fun postTest(
+        state: TimerState,
+        nowMono: Long,
+        title: String,
+        forceFocus: Boolean = false,
+    ): Boolean {
         if (!NotificationPermission.canPost(context)) return false
         val built = runCatching {
             builder.build(
@@ -73,7 +81,7 @@ class FocusLiveController @Inject constructor(@ApplicationContext private val co
                 nowMono = nowMono,
                 title = title,
                 richSurface = true,
-                forceFocus = true,
+                forceFocus = forceFocus,
                 firstFrame = true,
             )
         }.getOrNull() ?: return false

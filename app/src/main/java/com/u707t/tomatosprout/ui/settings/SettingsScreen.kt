@@ -207,7 +207,7 @@ fun SettingsScreen(
                     }
                     SwitchRow(
                         "实时活动 / 超级岛",
-                        "专注时在状态栏、锁屏与澎湃 OS 超级岛上显示倒计时",
+                        "专注时在状态栏、锁屏与超级岛上显示倒计时；澎湃 OS 4 的岛走 Android 16 实时更新",
                         settings.liveActivityEnabled,
                         viewModel::setLiveActivity,
                     )
@@ -221,7 +221,7 @@ fun SettingsScreen(
                         GroupDivider()
                         SwitchRow(
                             "强制焦点通知",
-                            "无视机型与焦点开关探测，始终附带焦点通知参数。装了白名单解锁模块、或系统把开关读成关闭时打开",
+                            "不走系统实时更新，强制携带澎湃 OS 焦点通知参数。给 OS3 及更早机型、或装了白名单解锁模块的用户；普通用户不用开",
                             settings.forceFocusNotification,
                             viewModel::setForceFocus,
                         )
