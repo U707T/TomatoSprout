@@ -187,6 +187,26 @@ internal object FocusIslandPayload {
         else -> "剩余 " + clock(input)
     }
 
+    /**
+     * 状态栏胶囊里的短文案；**返回 null 表示交给系统的计时器自己显示**。
+     *
+     * 胶囊宽度是有限的：写「已专注 00:10」这种 8 个字的文案，岛就会被撑得很长（真机实拍）。
+     * 所以运行中一律不写文字，让系统按 `setWhen + chronometer` 显示 `14:59` / `00:10`，
+     * 既是实时读数，也最短。倒计时超过 2 小时时系统会退回显示完整标题、把胶囊撑破，
+     * 那种情况才给紧凑文案「剩 180 分」。
+     */
+    fun chipText(input: FocusIslandInput): String? = when {
+        input.finished -> "已完成"
+        input.paused -> "已暂停"
+        // 正计时：系统从开始时刻往上走，比任何静态文案都准
+        input.countUp -> null
+        input.remainingSeconds <= CHIP_COUNTDOWN_SECONDS -> null
+        else -> "剩 " + ((input.remainingSeconds + 59) / 60) + " 分"
+    }
+
+    /** 剩余这么久以内，胶囊交给系统的实时倒计时（超过 2 小时胶囊会溢出）。 */
+    const val CHIP_COUNTDOWN_SECONDS = 2 * 3600
+
     /** 计划时长，例如 `25 分钟`。 */
     fun plannedLabel(input: FocusIslandInput): String = "${minutesOf(input)} 分钟"
 

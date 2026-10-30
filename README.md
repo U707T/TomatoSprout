@@ -2,7 +2,7 @@
 
 轻量打卡 + 番茄专注 + 数据回顾。原生 Android（Kotlin + Jetpack Compose），**不索权、不打扰、不空洞**。
 
-当前版本 **v1.13.0**（targetSdk 36）。只申请 6 个权限：`POST_NOTIFICATIONS`（可选）、`POST_PROMOTED_NOTIFICATIONS`（普通权限，澎湃 OS 4 的岛走实时更新需要）、`INTERNET`、`ACCESS_NETWORK_STATE`、`RECEIVE_BOOT_COMPLETED`（重启恢复本地提醒）、`VIBRATE`（触感反馈，普通权限，无运行时弹窗）。
+当前版本 **v1.13.1**（targetSdk 36）。只申请 6 个权限：`POST_NOTIFICATIONS`（可选）、`POST_PROMOTED_NOTIFICATIONS`（普通权限，澎湃 OS 4 的岛走实时更新需要）、`INTERNET`、`ACCESS_NETWORK_STATE`、`RECEIVE_BOOT_COMPLETED`（重启恢复本地提醒）、`VIBRATE`（触感反馈，普通权限，无运行时弹窗）。
 
 > 没有账号、没有托管后端、没有广告、没有埋点；没有使用情况监听、没有无障碍、没有悬浮窗、没有桌面小组件、没有前台服务常驻。
 

@@ -243,28 +243,10 @@ internal class FocusLiveNotification(private val context: Context) {
         if (Build.VERSION.SDK_INT < 36) return
         runCatching {
             val extras = builder.extras
-            chipText(input)?.let { extras.putCharSequence(EXTRA_SHORT_CRITICAL_TEXT, it) }
+            FocusIslandPayload.chipText(input)?.let {
+                extras.putCharSequence(EXTRA_SHORT_CRITICAL_TEXT, it)
+            }
             extras.putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true)
-        }
-    }
-
-    /**
-     * 状态栏胶囊 / 岛上的短文案；返回 null 表示「交给系统自己显示」。
-     *
-     * 倒计时剩余 2 小时内不写文案：系统会按 `setWhen + chronometer` 在胶囊里走实时倒计时，
-     * 比每 10 秒才刷新一次的静态文字直观得多（这也是系统时钟倒计时的做法）。
-     * 超过 2 小时系统会退回显示完整标题、把胶囊撑破，所以那时改用紧凑文案。
-     * 暂停 / 正计时 / 完成一律给静态文案。
-     */
-    private fun chipText(input: FocusIslandInput): CharSequence? {
-        val minutes = (input.remainingSeconds.coerceAtLeast(0) + 59) / 60
-        return when {
-            input.finished -> "已完成"
-            input.paused -> "已暂停"
-            input.countUp -> "已专注 " + FocusIslandPayload.formatClock(input.elapsedSeconds)
-            input.isBreak -> "休息 $minutes 分"
-            input.remainingSeconds <= CHIP_COUNTDOWN_SECONDS -> null
-            else -> "剩 $minutes 分"
         }
     }
 
@@ -387,7 +369,5 @@ internal class FocusLiveNotification(private val context: Context) {
         /** 实时更新：请求把通知提升为 promoted ongoing。 */
         const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
 
-        /** 这段剩余时间内不给胶囊文案，交给系统的实时倒计时（超过 2 小时胶囊会溢出）。 */
-        const val CHIP_COUNTDOWN_SECONDS = 2 * 3600
     }
 }

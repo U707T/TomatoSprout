@@ -255,6 +255,25 @@ class FocusIslandPayloadTest {
     }
 
     @Test
+    fun `capsule text stays short and lets the system tick`() {
+        // 运行中不写文案：胶囊里是系统计时器（14:59 / 00:10），这是最窄的形态
+        assertNull(FocusIslandPayload.chipText(countdown()))
+        assertNull(FocusIslandPayload.chipText(countUp()))
+        assertNull(FocusIslandPayload.chipText(countdown(isBreak = true)))
+
+        // 只有暂停 / 完成才给静态短文案
+        assertEquals("已暂停", FocusIslandPayload.chipText(countdown(paused = true)))
+        assertEquals(
+            "已完成",
+            FocusIslandPayload.chipText(countdown().copy(finished = true)),
+        )
+
+        // 超过 2 小时系统会退回显示标题，这时才给紧凑文案
+        val long = countdown(remaining = 3 * 3600).copy(plannedSeconds = 3 * 3600)
+        assertEquals("剩 180 分", FocusIslandPayload.chipText(long))
+    }
+
+    @Test
     fun `payload stays under the 3 KB system limit`() {
         val json = FocusIslandPayload.build(
             countdown(title = "一个特别特别长的任务名称需要被截断掉", firstFrame = true),
