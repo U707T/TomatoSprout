@@ -1,21 +1,36 @@
 #!/usr/bin/env python3
-"""番茄芽图标 v8 —— 纸雕插画（栅格）版。
+"""番茄芽图标 —— 纸雕插画（栅格）版。
 
-源图：design/icon/source/sprout_papercut.png（1064×1080 纸雕风插画）
-产出：
-  app/src/main/res/drawable-<dpi>/ic_launcher_foreground.png   自适应前景（108dp 满幅，含米色底）
+源图：design/icon/source/sprout_papercut.png（1064×1080 纸雕风插画：米色纸底 + 番茄芽卡片）
+
+产物：
+  app/src/main/res/drawable-<dpi>/ic_launcher_foreground.png   自适应前景（透明底 + 居中标记）
   app/src/main/res/drawable-<dpi>/ic_launcher_monochrome.png   Android 13+ 主题图标（剪影）
-  app/src/main/res/drawable/ic_launcher_background.xml         纯色底（shape）
-  design/icon/icon_v8_*.png、preview_sheet.png                 预览
+  app/src/main/res/drawable/ic_launcher_background.xml         纯色底（shape，米色纸色）
+  design/icon/icon_*.png、preview_sheet.png                     预览
 
-几何约定（Android 自适应图标）：
-  画布 108dp；启动器只显示中央 72dp（18..90dp），再套形状遮罩，安全圆 Ø66dp。
-  1) 把主体（含卡片）的最小外接圆半径压到 CONTENT_R_DP，圆形遮罩下不会被切；
-  2) 插画四周用「边缘复制」补到整块画布 → 图像边界永远落在可见区之外，
-     任何遮罩下都看不到插画矩形的硬边/接缝。
+注：minSdk = 26，所有设备都走自适应图标，**不生成** mipmap-<dpi> 的传统 PNG
+   （那是死资源；桌面图标由自适应层的 41% 口径决定）。
 
-用法：python3 build_icon_from_art.py
+几何约定（Android 自适应图标）
+------------------------------
+画布 108dp；启动器只显示中央 72dp（18..90dp），再套形状遮罩，安全圆 Ø66dp。
+
+**标记占图标 41%**（2026-11-01 与 MetaRikka 统一的实测口径）
+------------------------------------------------------------
+标记 = 番茄芽 + 卡片 + 投影，不含米色纸底。
+  自适应前景：标记 bbox 宽度 ÷ 可见区 72dp = 41%
+  传统图标　：标记 bbox 宽度 ÷ 图标边长   = 41%
+与官方推荐的 50–55% 不同 —— 那个区间在真实桌面上偏挤。
+
+⚠️ 这里量的是**像素 bbox**，不是参数：插画自带留白和柔和投影，
+   把整张图缩 0.41 并不等于 bbox 占 0.41。改完必须跑 --report 看实测。
+
+用法：
+    python3 build_icon_from_art.py            # 出全部资源
+    python3 build_icon_from_art.py --report   # 只打印实测比例，不写文件
 """
+import argparse
 import os
 
 import cv2
@@ -28,10 +43,10 @@ SRC = os.path.join(OUT, "source", "sprout_papercut.png")
 
 CANVAS = 108.0          # 自适应图标画布（dp）
 VISIBLE = 72.0          # 启动器可见区（dp）
-CONTENT_R_DP = 34.6     # 主体外接圆半径（dp）；36dp 即圆形遮罩边界
-BG = (247, 243, 226)    # 底色：源图米色背景的中位色
-FADE_DP = 2.0           # 画布最外圈淡出（个别启动器放大时避免硬边）
+MARK_W_RATIO = float(os.environ.get("MARK_W_RATIO", "0.41"))
+BG = (247, 243, 226)    # 底色：源图米色背景（#F7F3E2，与 drawable/ic_launcher_background.xml 一致）
 SS = 8                  # 超采样：864px 画布 → 各密度降采样
+ALPHA_THR = 8           # 量 bbox 时的 alpha 阈值（降采样会留极淡的边）
 
 DENSITIES = {"mdpi": 1.0, "hdpi": 1.5, "xhdpi": 2.0, "xxhdpi": 3.0, "xxxhdpi": 4.0}
 
@@ -58,69 +73,53 @@ def load_art():
     return art, tuple(int(v) for v in np.median(ring, axis=0))
 
 
-def color_masks(art, bg):
-    """主体掩膜（与底色差异大）与卡片白底掩膜。"""
+def motif_mask(art, bg):
+    """主体（番茄芽 + 卡片 + 投影）的实心 mask。
+
+    纸雕插画的卡片内部是接近底色的米白，只看「与底色的差值」会把卡片中间挖空，
+    所以先闭运算 + 填洞，再取最大的几块（丢掉零散噪点）。
+    """
     diff = np.abs(art.astype(np.float32) - np.array(bg, np.float32)).max(axis=2)
-    strong = cv2.morphologyEx((diff > 40).astype(np.uint8), cv2.MORPH_CLOSE,
-                              np.ones((5, 5), np.uint8))
-    b, g, r = (art[..., 2].astype(np.int16), art[..., 1].astype(np.int16),
-               art[..., 0].astype(np.int16))
-    card = cv2.morphologyEx(((b > 236) & (r > 240) & (g > 240)).astype(np.uint8),
-                            cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
-    return largest_components(strong), largest_components(card, 1)
+    hard = (diff > 24).astype(np.uint8)
+    hard = cv2.morphologyEx(hard, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    solid = fill_holes(hard)
+    return largest_components(solid)
 
 
-def content_circle(art, bg):
-    """主体（含白色卡片）的最小外接圆 → (cx, cy, r)。"""
-    strong, card = color_masks(art, bg)
-    m = cv2.morphologyEx(np.clip(strong + card, 0, 1).astype(np.uint8), cv2.MORPH_CLOSE,
-                         np.ones((7, 7), np.uint8))
-    m = largest_components(m)
-    cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    pts = np.concatenate([c.reshape(-1, 2) for c in cnts])
-    (cx, cy), radius = cv2.monotonic_enclosing_circle = cv2.minEnclosingCircle(pts)
-    return float(cx), float(cy), float(radius)
+def crop_motif(art, mask):
+    """裁到 mask 的 bbox，返回 (RGB 图, 羽化 alpha, bbox)。"""
+    ys, xs = np.nonzero(mask)
+    x0, x1 = int(xs.min()), int(xs.max()) + 1
+    y0, y1 = int(ys.min()), int(ys.max()) + 1
+    sub = np.ascontiguousarray(mask[y0:y1, x0:x1])
+    alpha = cv2.GaussianBlur((sub * 255).astype(np.uint8), (0, 0), 1.2)
+    return art[y0:y1, x0:x1], alpha, (x0, y0, x1, y1)
 
 
-def note_content_masks(art, bg):
-    """主题图标用：实心剪影 + 卡片内要挖空的清单标记。"""
-    strong, card = color_masks(art, bg)
-    union = np.clip(strong | card, 0, 1).astype(np.uint8)
-    union = cv2.morphologyEx(union, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))  # 收掉发丝级缝隙
-    silhouette = fill_holes(union)
-    card_body = cv2.dilate(card, np.ones((5, 5), np.uint8), iterations=2)  # 排除卡片自身描边
-    marks = (fill_holes(card) & (1 - card_body)).astype(np.uint8)
-    marks = cv2.morphologyEx(marks, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    marks = cv2.dilate(marks, np.ones((3, 3), np.uint8), iterations=2)
-    return silhouette.astype(np.uint8), marks.astype(np.uint8)
+# ------------------------------------------------------------------ 摆放
+def mark_width(rgba):
+    box = rgba.getchannel("A").point(lambda v: 255 if v > ALPHA_THR else 0).getbbox()
+    if not box:
+        raise SystemExit("标记层是空的，检查 motif_mask 的阈值")
+    return box[2] - box[0]
 
 
-def pad_to_cover(img, need_px):
-    """四周边缘复制扩边（BORDER_REPLICATE）：米色底/柔和投影自然延续，不产生硬边。"""
-    h, w = img.shape[:2]
-    px, py = int(need_px), int(need_px)
-    return cv2.copyMakeBorder(img, py, py, px, px, cv2.BORDER_REPLICATE)
+def fit_mark(rgb, alpha, target_w, super_scale=1):
+    """把标记缩放到「实测 bbox 宽度 == target_w」，返回 RGBA。"""
+    im = Image.fromarray(rgb, "RGB").convert("RGBA")
+    im.putalpha(Image.fromarray(alpha, "L"))
+    k = target_w / mark_width(im)
+    w, h = im.size
+    im = im.resize((max(1, round(w * k)), max(1, round(h * k))), Image.LANCZOS)
+    box = im.getchannel("A").point(lambda v: 255 if v > ALPHA_THR else 0).getbbox()
+    return im.crop(box)
 
 
-def resize_into(canvas, src, k_px, x0_px, y0_px):
-    """把 src 按 k_px（画布像素/源像素）缩放后贴到 canvas 的 (x0,y0)。"""
-    tw = max(1, int(round(src.shape[1] * k_px)))
-    th = max(1, int(round(src.shape[0] * k_px)))
-    interp = cv2.INTER_AREA if tw <= src.shape[1] else cv2.INTER_LANCZOS4
-    im = cv2.resize(src, (tw, th), interpolation=interp)
-    x0, y0 = int(round(x0_px)), int(round(y0_px))
-    sx0, sy0 = max(0, -x0), max(0, -y0)
-    dx0, dy0 = max(0, x0), max(0, y0)
-    cw, ch = min(canvas.shape[1] - dx0, tw - sx0), min(canvas.shape[0] - dy0, th - sy0)
-    if cw > 0 and ch > 0:
-        canvas[dy0:dy0 + ch, dx0:dx0 + cw] = im[sy0:sy0 + ch, sx0:sx0 + cw]
-    return canvas
-
-
-def fade_alpha(size_px):
-    y, x = np.mgrid[0:size_px, 0:size_px].astype(np.float32) / SS
-    d = np.minimum(np.minimum(x, CANVAS - x), np.minimum(y, CANVAS - y))
-    return (np.clip(d / FADE_DP, 0.0, 1.0) * 255).astype(np.uint8)
+def centred(canvas_px, rgba):
+    layer = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
+    layer.alpha_composite(rgba, ((canvas_px - rgba.width) // 2,
+                                 (canvas_px - rgba.height) // 2))
+    return layer
 
 
 # ------------------------------------------------------------------ 预览
@@ -163,7 +162,6 @@ def write_previews(full, mono):
         im = launcher_view(full, size, mode)
         sheet.paste(im, (x, 86), im)
 
-    # 主题图标（模拟系统着色：浅绿底 + 单色剪影）
     tile = Image.new("RGB", (420, 122), "#DCE8D0")
     m = launcher_view(mono, 104, "square")
     tile.paste(m, (10, 9), m)
@@ -178,69 +176,56 @@ def write_previews(full, mono):
 
 
 # ------------------------------------------------------------------ 主流程
-def build():
+def build(report_only=False):
     art, bg = load_art()
-    print("source", art.shape, "bg", bg)
-    cx, cy, r = content_circle(art, bg)
-    k = CONTENT_R_DP / r                      # dp / 源像素
-    print(f"content circle  cx={cx:.1f} cy={cy:.1f} r={r:.1f}px  ->  {k:.5f} dp/px")
+    mask = motif_mask(art, bg)
+    rgb, alpha, bbox = crop_motif(art, mask)
+    print("source %s  bg=%s  标记源 bbox=%s (%d×%d)"
+          % (art.shape, bg, bbox, bbox[2] - bbox[0], bbox[3] - bbox[1]))
 
-    # 扩边到整块画布（保证插画边界在可见区 18..90dp 之外）
-    half = CANVAS / 2 / k
-    need = max(half - cx, (cx - art.shape[1]) + half,      # 左 / 右
-               half - cy, (cy - art.shape[0]) + half)      # 上 / 下
-    art_pad = pad_to_cover(art, np.ceil(need) + 2)
-    pad_px = np.ceil(need) + 2
-    ccx, ccy = cx + pad_px, cy + pad_px
-    w_dp, h_dp = art_pad.shape[1] * k, art_pad.shape[0] * k
-    x0_dp, y0_dp = CANVAS / 2 - ccx * k, CANVAS / 2 - ccy * k
-    print(f"art {w_dp:.1f}×{h_dp:.1f}dp at ({x0_dp:.1f},{y0_dp:.1f})"
-          f"..({x0_dp + w_dp:.1f},{y0_dp + h_dp:.1f})   (需覆盖 0..108dp)")
-    assert x0_dp <= 0 and y0_dp <= 0 and x0_dp + w_dp >= CANVAS and y0_dp + h_dp >= CANVAS, \
-        "扩边不足：插画没盖满画布，会出现硬边"
-
+    rows = []
     size_px = int(CANVAS * SS)
-    k_px = k * SS
-    canvas = np.zeros((size_px, size_px, 3), np.uint8)
-    canvas[:] = BG
-    canvas = resize_into(canvas, art_pad, k_px, x0_dp * SS, y0_dp * SS)
-    fade = fade_alpha(size_px)
 
-    # 主题图标剪影：实心主体 − 卡片内标记
-    sil, marks = note_content_masks(art, bg)
-    ax_dp, ay_dp = x0_dp + pad_px * k, y0_dp + pad_px * k     # 未扩边插画在画布上的位置
-    sil_c = resize_into(np.zeros((size_px, size_px), np.uint8),
-                        (sil * 255).astype(np.uint8), k_px, ax_dp * SS, ay_dp * SS)
-    mrk_c = resize_into(np.zeros((size_px, size_px), np.uint8),
-                        (marks * 255).astype(np.uint8), k_px, ax_dp * SS, ay_dp * SS)
-    alpha = np.clip(sil_c.astype(np.int16) - mrk_c.astype(np.int16), 0, 255).astype(np.uint8)
-    alpha = cv2.GaussianBlur(alpha, (3, 3), 0)
-    alpha = (alpha.astype(np.float32) * fade / 255.0).astype(np.uint8)
-    mono = np.zeros((size_px, size_px, 4), np.uint8)
-    mono[..., 3] = alpha
-    mono_img = Image.fromarray(mono, "RGBA")
+    # 自适应：前景 = 透明底 + 居中标记（41% 可见区）
+    fg_mark = fit_mark(rgb, alpha, MARK_W_RATIO * VISIBLE * SS)
+    fg_canvas = centred(size_px, fg_mark)
+    # 主题图标剪影：同一几何，只取 alpha
+    mono_canvas = Image.new("RGBA", (size_px, size_px), (0, 0, 0, 0))
+    mono_canvas.putalpha(fg_canvas.getchannel("A"))
 
-    total = 0
     for name, scale in DENSITIES.items():
         n = int(round(CANVAS * scale))
-        d = os.path.join(APP_RES, f"drawable-{name}")
-        os.makedirs(d, exist_ok=True)
-        fg = Image.fromarray(canvas).resize((n, n), Image.LANCZOS).convert("RGBA")
-        fg.putalpha(Image.fromarray(fade).resize((n, n), Image.LANCZOS))
-        p1 = os.path.join(d, "ic_launcher_foreground.png")
-        fg.save(p1, optimize=True)
-        p2 = os.path.join(d, "ic_launcher_monochrome.png")
-        mono_img.resize((n, n), Image.LANCZOS).save(p2, optimize=True)
-        total += os.path.getsize(p1) + os.path.getsize(p2)
-        print(f"  {name:7s} {n:3d}px  fg {os.path.getsize(p1) // 1024:4d}KB  "
-              f"mono {os.path.getsize(p2) // 1024:3d}KB")
-    print(f"合计 {total / 1024:.0f} KB")
+        vis = VISIBLE * scale
+    
+        fg = fg_canvas.resize((n, n), Image.LANCZOS)
+        mono = mono_canvas.resize((n, n), Image.LANCZOS)
 
-    full = Image.fromarray(canvas).convert("RGBA")
-    full.putalpha(Image.fromarray(fade))
-    write_previews(full, mono_img)
+        # 实测
+        fg_w = mark_width(fg)
+        rows.append((name, n, fg_w, fg_w / vis))
+
+        if report_only:
+            continue
+        d_out = os.path.join(APP_RES, "drawable-%s" % name)
+        os.makedirs(d_out, exist_ok=True)
+        fg.save(os.path.join(d_out, "ic_launcher_foreground.png"), optimize=True)
+        mono.save(os.path.join(d_out, "ic_launcher_monochrome.png"), optimize=True)
+
+    print("\n标记 bbox 宽度 ÷ 自适应可见区(72dp)：")
+    for name, n, fw, fr in rows:
+        print("  %-8s canvas=%3dpx  前景 %3dpx = %5.1f%%" % (name, n, fw, fr * 100))
+    print("目标 %.1f%% → 实测 %.1f%%（xxxhdpi）" % (MARK_W_RATIO * 100, rows[-1][3] * 100))
+
+    if report_only:
+        return
+
+    full = Image.new("RGBA", (size_px, size_px), BG + (255,))
+    full.alpha_composite(fg_canvas)
+    write_previews(full, mono_canvas)
 
 
 if __name__ == "__main__":
-    build()
-    print("icon v8 ok ->", OUT)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--report", action="store_true", help="只打印实测比例，不写文件")
+    build(report_only=ap.parse_args().report)
+    print("icon ok ->", OUT)
